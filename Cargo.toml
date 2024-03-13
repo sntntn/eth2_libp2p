@@ -1,0 +1,75 @@
+[package]
+name = 'eth2_libp2p'
+version = '0.2.0'
+authors = [
+    'Grandine Team <info@grandine.io>',
+    'Sigma Prime <contact@sigmaprime.io>',
+]
+edition = { workspace = true }
+
+[dependencies]
+anyhow = { workspace = true }
+async-channel = { workspace = true }
+asynchronous-codec = { workspace = true }
+base64 = { workspace = true }
+bls = { workspace = true }
+byteorder = { workspace = true }
+bytes = { workspace = true }
+delay_map = { workspace = true }
+dirs = { workspace = true }
+discv5 = { workspace = true }
+either = { workspace = true }
+enum-iterator = { workspace = true }
+fnv = { workspace = true }
+futures = { workspace = true }
+futures-ticker = { workspace = true }
+futures-timer = { workspace = true }
+getrandom = { workspace = true }
+grandine_version = { workspace = true }
+helper_functions = { workspace = true }
+hex = { workspace = true }
+hex_fmt = { workspace = true }
+instant = { workspace = true }
+lazy_static = { workspace = true }
+libp2p = { workspace = true }
+libp2p-mplex = { workspace = true }
+lru = { workspace = true }
+once_cell = { workspace = true }
+parking_lot = { workspace = true }
+prometheus = { workspace = true }
+prometheus-client = { workspace = true }
+quick-protobuf = { workspace = true }
+quick-protobuf-codec = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+slog = { workspace = true }
+smallvec = { workspace = true }
+snap = { workspace = true }
+ssz = { workspace = true }
+strum = { workspace = true }
+tiny-keccak = { workspace = true }
+tokio = { workspace = true }
+tokio-io-timeout = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+try_from_iterator = { workspace = true }
+typenum = { workspace = true }
+types = { workspace = true }
+unsigned-varint = { workspace = true }
+void = { workspace = true }
+
+[dev-dependencies]
+async-std = { version = '1.6.3', features = ["unstable"] }
+exit-future = { version = '0.2.0' }
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
+slog-async = { workspace = true }
+slog-term = { workspace = true }
+tempfile = { workspace = true }
+
+[features]
+default = ["serde"]
+libp2p-websocket = []
+serde = []
