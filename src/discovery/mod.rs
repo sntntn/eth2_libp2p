@@ -37,7 +37,7 @@ use ssz::SszWrite as _;
 use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, SocketAddr},
-    path::Path,
+    path::PathBuf,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -160,7 +160,7 @@ pub struct Discovery {
     cached_enrs: LruCache<PeerId, Enr>,
 
     /// The directory where the ENR is stored.
-    enr_dir: Option<String>,
+    enr_dir: Option<PathBuf>,
 
     /// The handle for the underlying discv5 Server.
     ///
@@ -204,15 +204,7 @@ impl Discovery {
         log: &slog::Logger,
     ) -> Result<Self> {
         let log = log.clone();
-
-        let enr_dir = config
-            .network_dir
-            .as_ref()
-            .map(|network_dir| match network_dir.to_str() {
-                Some(path) => String::from(path),
-                None => String::from(""),
-            });
-
+        let enr_dir = config.network_dir.clone();
         let local_enr = network_globals.local_enr.read().clone();
         let local_node_id = local_enr.node_id();
 
@@ -421,9 +413,7 @@ impl Discovery {
         // replace the global version
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
         // persist modified enr to disk
-        if let Some(enr_dir) = self.enr_dir.as_ref() {
-            enr::save_enr_to_disk(Path::new(enr_dir), &self.local_enr(), &self.log);
-        }
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
         Ok(())
     }
 
@@ -440,9 +430,7 @@ impl Discovery {
         // replace the global version
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
         // persist modified enr to disk
-        if let Some(enr_dir) = self.enr_dir.as_ref() {
-            enr::save_enr_to_disk(Path::new(enr_dir), &self.local_enr(), &self.log);
-        }
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
         Ok(())
     }
 
@@ -454,9 +442,7 @@ impl Discovery {
         const IS_TCP: bool = false;
         if self.discv5.update_local_enr_socket(socket_addr, IS_TCP) {
             // persist modified enr to disk
-            if let Some(enr_dir) = self.enr_dir.as_ref() {
-                enr::save_enr_to_disk(Path::new(enr_dir), &self.local_enr(), &self.log);
-            }
+            enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
         }
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
         Ok(())
@@ -522,9 +508,7 @@ impl Discovery {
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
 
         // persist modified enr to disk
-        if let Some(enr_dir) = self.enr_dir.as_ref() {
-            enr::save_enr_to_disk(Path::new(enr_dir), &self.local_enr(), &self.log);
-        }
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
         Ok(())
     }
 
@@ -563,9 +547,7 @@ impl Discovery {
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
 
         // persist modified enr to disk
-        if let Some(enr_dir) = self.enr_dir.as_ref() {
-            enr::save_enr_to_disk(Path::new(enr_dir), &self.local_enr(), &self.log);
-        }
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
     }
 
     // Bans a peer and it's associated seen IP addresses.
@@ -1025,9 +1007,7 @@ impl NetworkBehaviour for Discovery {
                                 self.discv5.update_local_enr_socket(socket_addr, true);
                             }
                             let enr = self.discv5.local_enr();
-                            if let Some(enr_dir) = self.enr_dir.as_ref() {
-                                enr::save_enr_to_disk(Path::new(enr_dir), &enr, &self.log);
-                            }
+                            enr::save_enr_to_disk(self.enr_dir.as_deref(), &enr, &self.log);
                             // update  network globals
                             *self.network_globals.local_enr.write() = enr;
                             // A new UDP socket has been detected.

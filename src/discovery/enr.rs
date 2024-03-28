@@ -72,52 +72,50 @@ pub fn use_or_load_enr(
     config: &NetworkConfig,
     log: &slog::Logger,
 ) -> Result<()> {
-    let network_dir = match config.network_dir.as_ref() {
-        Some(network_dir) => network_dir,
-        None => return Ok(()),
-    };
+    if let Some(network_dir) = config.network_dir.as_deref() {
+        let enr_f = network_dir.join(ENR_FILENAME);
+        if let Ok(mut enr_file) = File::open(enr_f.clone()) {
+            let mut enr_string = String::new();
+            match enr_file.read_to_string(&mut enr_string) {
+                Err(_) => debug!(log, "Could not read ENR from file"),
+                Ok(_) => {
+                    match Enr::from_str(&enr_string) {
+                        Ok(disk_enr) => {
+                            // if the same node id, then we may need to update our sequence number
+                            if local_enr.node_id() == disk_enr.node_id() {
+                                if compare_enr(local_enr, &disk_enr) {
+                                    debug!(log, "ENR loaded from disk"; "file" => ?enr_f);
+                                    // the stored ENR has the same configuration, use it
+                                    *local_enr = disk_enr;
+                                    return Ok(());
+                                }
 
-    let enr_f = network_dir.join(ENR_FILENAME);
-    if let Ok(mut enr_file) = File::open(enr_f.clone()) {
-        let mut enr_string = String::new();
-        match enr_file.read_to_string(&mut enr_string) {
-            Err(_) => debug!(log, "Could not read ENR from file"),
-            Ok(_) => {
-                match Enr::from_str(&enr_string) {
-                    Ok(disk_enr) => {
-                        // if the same node id, then we may need to update our sequence number
-                        if local_enr.node_id() == disk_enr.node_id() {
-                            if compare_enr(local_enr, &disk_enr) {
-                                debug!(log, "ENR loaded from disk"; "file" => ?enr_f);
-                                // the stored ENR has the same configuration, use it
-                                *local_enr = disk_enr;
-                                return Ok(());
+                                // same node id, different configuration - update the sequence number
+                                // Note: local_enr is generated with default(0) attnets value,
+                                // so a non default value in persisted enr will also update sequence number.
+                                let new_seq_no =
+                                    disk_enr.seq().checked_add(1).ok_or_else(|| {
+                                        anyhow!(
+                                            "ENR sequence number on file is too large. \
+                                             Remove it to generate a new NodeId"
+                                        )
+                                    })?;
+                                local_enr.set_seq(new_seq_no, enr_key).map_err(|e| {
+                                    anyhow!("Could not update ENR sequence number: {:?}", e)
+                                })?;
+                                debug!(log, "ENR sequence number increased"; "seq" =>  new_seq_no);
                             }
-
-                            // same node id, different configuration - update the sequence number
-                            // Note: local_enr is generated with default(0) attnets value,
-                            // so a non default value in persisted enr will also update sequence number.
-                            let new_seq_no = disk_enr.seq().checked_add(1).ok_or_else(|| {
-                                anyhow!(
-                                    "ENR sequence number on file is too large. \
-                                     Remove it to generate a new NodeId"
-                                )
-                            })?;
-                            local_enr.set_seq(new_seq_no, enr_key).map_err(|e| {
-                                anyhow!("Could not update ENR sequence number: {:?}", e)
-                            })?;
-                            debug!(log, "ENR sequence number increased"; "seq" =>  new_seq_no);
                         }
-                    }
-                    Err(e) => {
-                        warn!(log, "ENR from file could not be decoded"; "error" => ?e);
+                        Err(e) => {
+                            warn!(log, "ENR from file could not be decoded"; "error" => ?e);
+                        }
                     }
                 }
             }
         }
     }
 
-    save_enr_to_disk(&network_dir, local_enr, log);
+    save_enr_to_disk(config.network_dir.as_deref(), local_enr, log);
 
     Ok(())
 }
@@ -273,7 +271,11 @@ pub fn load_enr_from_disk(dir: &Path) -> Result<Enr, String> {
 }
 
 /// Saves an ENR to disk
-pub fn save_enr_to_disk(dir: &Path, enr: &Enr, log: &slog::Logger) {
+pub fn save_enr_to_disk(dir: Option<&Path>, enr: &Enr, log: &slog::Logger) {
+    let Some(dir) = dir else {
+        return;
+    };
+
     let _ = std::fs::create_dir_all(dir);
     match File::create(dir.join(Path::new(ENR_FILENAME)))
         .and_then(|mut f| f.write_all(enr.to_base64().as_bytes()))

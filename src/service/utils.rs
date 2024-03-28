@@ -19,7 +19,7 @@ use ssz::{SszReadDefault as _, SszWrite as _};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use types::phase0::primitives::ForkDigest;
@@ -174,10 +174,7 @@ pub fn strip_peer_id(addr: &mut Multiaddr) {
 }
 
 /// Load metadata from persisted file. Return default metadata if loading fails.
-pub fn load_or_build_metadata(
-    network_dir: Option<&std::path::PathBuf>,
-    log: &slog::Logger,
-) -> MetaData {
+pub fn load_or_build_metadata(network_dir: Option<&Path>, log: &slog::Logger) -> MetaData {
     // We load a V2 metadata version by default (regardless of current fork)
     // since a V2 metadata can be converted to V1. The RPC encoder is responsible
     // for sending the correct metadata version based on the negotiated protocol version.
@@ -276,13 +273,10 @@ pub(crate) fn create_whitelist_filter(
 }
 
 /// Persist metadata to disk
-pub(crate) fn save_metadata_to_disk(dir: Option<&PathBuf>, metadata: MetaData, log: &slog::Logger) {
-    let dir = match dir {
-        Some(dir) => dir,
-        None => {
-            debug!(log, "Skipping Metadata writing to disk");
-            return;
-        }
+pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData, log: &slog::Logger) {
+    let Some(dir) = dir else {
+        debug!(log, "Skipping Metadata writing to disk");
+        return;
     };
 
     let write_to_disk = || -> Result<()> {
@@ -291,7 +285,7 @@ pub(crate) fn save_metadata_to_disk(dir: Option<&PathBuf>, metadata: MetaData, l
             MetaData::V2(meta_data) => meta_data.to_ssz()?,
         };
 
-        std::fs::create_dir_all(&dir)?;
+        std::fs::create_dir_all(dir)?;
         std::fs::write(dir.join(METADATA_FILENAME), ssz_bytes)?;
 
         Ok(())

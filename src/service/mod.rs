@@ -166,7 +166,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 &log,
             )?;
             // Construct the metadata
-            let meta_data = utils::load_or_build_metadata(config.network_dir.as_ref(), &log);
+            let meta_data = utils::load_or_build_metadata(config.network_dir.as_deref(), &log);
             let globals = NetworkGlobals::new(
                 enr,
                 meta_data,
@@ -1054,7 +1054,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         }
         // Save the updated metadata to disk
         utils::save_metadata_to_disk(
-            self.network_dir.as_ref(),
+            self.network_dir.as_deref(),
             self.network_globals.local_metadata.read().clone(),
             &self.log,
         );
