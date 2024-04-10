@@ -762,8 +762,8 @@ impl PeerDB {
 
                 // Update the connection state
                 match direction {
-                    ConnectionDirection::Incoming => info.connect_ingoing(Some(seen_address)),
-                    ConnectionDirection::Outgoing => info.connect_outgoing(Some(seen_address)),
+                    ConnectionDirection::Incoming => info.connect_ingoing(seen_address),
+                    ConnectionDirection::Outgoing => info.connect_outgoing(seen_address),
                 }
             }
 
