@@ -5,9 +5,13 @@ use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
 use typenum::Unsigned as _;
 use types::{
+    altair::consts::SyncCommitteeSubnetCount,
     deneb::consts::BlobSidecarSubnetCount,
     nonstandard::Phase,
-    phase0::primitives::{ForkDigest, SubnetId},
+    phase0::{
+        consts::AttestationSubnetCount,
+        primitives::{ForkDigest, SubnetId},
+    },
 };
 
 use crate::Subnet;
@@ -67,6 +71,17 @@ pub fn fork_core_topics(phase: &Phase) -> Vec<GossipKind> {
             deneb_topics
         }
     }
+}
+
+/// Returns all the attestation and sync committee topics, for a given fork.
+pub fn attestation_sync_committee_topics() -> impl Iterator<Item = GossipKind> {
+    (0..AttestationSubnetCount::USIZE)
+        .map(|subnet_id| GossipKind::Attestation(subnet_id as SubnetId))
+        .chain(
+            (0..SyncCommitteeSubnetCount::USIZE).map(|sync_committee_id| {
+                GossipKind::SyncCommitteeMessage(sync_committee_id as SubnetId)
+            }),
+        )
 }
 
 /// Returns all the topics that we need to subscribe to for a given fork
