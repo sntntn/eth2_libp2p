@@ -31,6 +31,7 @@ use api_types::{PeerRequestId, Request, RequestId, Response};
 use futures::stream::StreamExt;
 use gossipsub_scoring_parameters::{peer_gossip_thresholds, PeerScoreSettings};
 use libp2p::multiaddr::{self, Multiaddr, Protocol as MProtocol};
+use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{Swarm, SwarmEvent};
 use libp2p::{identify, PeerId, SwarmBuilder};
 use slog::{crit, debug, info, o, trace, warn};
@@ -392,6 +393,11 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             libp2p::connection_limits::Behaviour::new(limits)
         };
 
+        let upnp = Toggle::from(
+            config
+                .upnp_enabled
+                .then_some(libp2p::upnp::tokio::Behaviour::default()),
+        );
         let behaviour = {
             Behaviour {
                 gossipsub,
@@ -400,7 +406,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 identify,
                 peer_manager,
                 connection_limits,
-                upnp: Default::default(),
+                upnp,
             }
         };
 
