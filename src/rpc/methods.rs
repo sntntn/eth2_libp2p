@@ -1,4 +1,5 @@
 //! Available RPC methods types and ids.
+use std::fmt::Display;
 
 use crate::types::{EnrAttestationBitfield, EnrSyncCommitteeBitfield};
 use anyhow::Result;
@@ -57,11 +58,13 @@ impl Deref for ErrorType {
     }
 }
 
-impl ToString for ErrorType {
-    fn to_string(&self) -> String {
+impl Display for ErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[allow(clippy::invalid_regex)]
         let re = Regex::new("\\p{C}").expect("Regex is valid");
-        String::from_utf8_lossy(&re.replace_all(self.0.deref(), &b""[..])).to_string()
+        let error_type_str =
+            String::from_utf8_lossy(&re.replace_all(self.0.deref(), &b""[..])).to_string();
+        write!(f, "{}", error_type_str)
     }
 }
 
@@ -729,7 +732,7 @@ impl<P: Preset> std::fmt::Display for RPCCodedResponse<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RPCCodedResponse::Success(res) => write!(f, "{}", res),
-            RPCCodedResponse::Error(code, err) => write!(f, "{}: {}", code, err.to_string()),
+            RPCCodedResponse::Error(code, err) => write!(f, "{}: {}", code, err),
             RPCCodedResponse::StreamTermination(_) => write!(f, "Stream Termination"),
         }
     }
