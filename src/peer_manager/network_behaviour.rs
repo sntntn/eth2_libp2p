@@ -153,8 +153,8 @@ impl NetworkBehaviour for PeerManager {
                 self.on_dial_failure(peer_id);
             }
             FromSwarm::ExternalAddrConfirmed(_) => {
-                // TODO: we likely want to check this against our assumed external tcp
-                // address
+                // We have an external address confirmed, means we are able to do NAT traversal.
+                metrics::set_gauge_vec(&metrics::NAT_OPEN, &["libp2p"], 1);
             }
             _ => {
                 // NOTE: FromSwarm is a non exhaustive enum so updates should be based on release
@@ -242,14 +242,15 @@ impl PeerManager {
             self.events.push(PeerManagerEvent::MetaData(peer_id));
         }
 
-        // Check NAT if metrics are enabled
-        if self.network_globals.local_enr.read().udp4().is_some() {
-            metrics::check_nat();
-        }
-
         // increment prometheus metrics
         if self.metrics_enabled {
             let remote_addr = endpoint.get_remote_address();
+            let direction = if endpoint.is_dialer() {
+                "outbound"
+            } else {
+                "inbound"
+            };
+
             match remote_addr.iter().find(|proto| {
                 matches!(
                     proto,
@@ -257,10 +258,10 @@ impl PeerManager {
                 )
             }) {
                 Some(multiaddr::Protocol::QuicV1) => {
-                    metrics::inc_gauge(&metrics::QUIC_PEERS_CONNECTED);
+                    metrics::inc_gauge_vec(&metrics::PEERS_CONNECTED_MULTI, &[direction, "quic"]);
                 }
                 Some(multiaddr::Protocol::Tcp(_)) => {
-                    metrics::inc_gauge(&metrics::TCP_PEERS_CONNECTED);
+                    metrics::inc_gauge_vec(&metrics::PEERS_CONNECTED_MULTI, &[direction, "tcp"]);
                 }
                 Some(_) => unreachable!(),
                 None => {
@@ -268,7 +269,7 @@ impl PeerManager {
                 }
             };
 
-            self.update_connected_peer_metrics();
+            metrics::inc_gauge(&metrics::PEERS_CONNECTED);
             metrics::inc_counter(&metrics::PEER_CONNECT_EVENT_COUNT);
         }
 
@@ -338,6 +339,12 @@ impl PeerManager {
         let remote_addr = endpoint.get_remote_address();
         // Update the prometheus metrics
         if self.metrics_enabled {
+            let direction = if endpoint.is_dialer() {
+                "outbound"
+            } else {
+                "inbound"
+            };
+
             match remote_addr.iter().find(|proto| {
                 matches!(
                     proto,
@@ -345,15 +352,16 @@ impl PeerManager {
                 )
             }) {
                 Some(multiaddr::Protocol::QuicV1) => {
-                    metrics::dec_gauge(&metrics::QUIC_PEERS_CONNECTED);
+                    metrics::dec_gauge_vec(&metrics::PEERS_CONNECTED_MULTI, &[direction, "quic"]);
                 }
                 Some(multiaddr::Protocol::Tcp(_)) => {
-                    metrics::dec_gauge(&metrics::TCP_PEERS_CONNECTED);
+                    metrics::dec_gauge_vec(&metrics::PEERS_CONNECTED_MULTI, &[direction, "tcp"]);
                 }
                 // If it's an unknown protocol we already logged when connection was established.
                 _ => {}
             };
-            self.update_connected_peer_metrics();
+            // Legacy standard metrics.
+            metrics::dec_gauge(&metrics::PEERS_CONNECTED);
             metrics::inc_counter(&metrics::PEER_DISCONNECT_EVENT_COUNT);
         }
     }
