@@ -13,8 +13,7 @@ use try_from_iterator::TryFromIterator as _;
 use typenum::{Unsigned as _, U1024, U128, U256, U768};
 use types::deneb::containers::BlobIdentifier;
 use types::{
-    altair::containers::LightClientBootstrap,
-    combined::SignedBeaconBlock,
+    combined::{LightClientBootstrap, SignedBeaconBlock},
     deneb::containers::BlobSidecar,
     phase0::primitives::{Epoch, ForkDigest, Slot, H256},
     preset::Preset,
@@ -529,7 +528,7 @@ pub enum RPCResponse<P: Preset> {
     BlobsByRange(Arc<BlobSidecar<P>>),
 
     /// A response to a get LIGHT_CLIENT_BOOTSTRAP request.
-    LightClientBootstrap(LightClientBootstrap<P>),
+    LightClientBootstrap(Arc<LightClientBootstrap<P>>),
 
     /// A response to a get BLOBS_BY_ROOT request.
     BlobsByRoot(Arc<BlobSidecar<P>>),
@@ -721,7 +720,7 @@ impl<P: Preset> std::fmt::Display for RPCResponse<P> {
                 write!(
                     f,
                     "LightClientBootstrap Slot: {}",
-                    bootstrap.header.beacon.slot
+                    bootstrap.slot()
                 )
             }
         }

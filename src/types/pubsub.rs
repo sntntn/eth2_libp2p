@@ -300,7 +300,7 @@ impl<P: Preset> PubsubMessage<P> {
                                 }
                                 None => {
                                     return Err(format!(
-                                        "unknown gossipsub fork digest: {:?}",
+                                        "light_client_finality_update topic invalid for given fork digest {:?}",
                                         gossip_topic.fork_digest,
                                     ))
                                 }
@@ -336,8 +336,8 @@ impl<P: Preset> PubsubMessage<P> {
                                 }
                                 None => {
                                     return Err(format!(
-                                        "unknown gossipsub fork digest: {:?}",
-                                        gossip_topic.fork_digest,
+                                        "light_client_optimistic_update topic invalid for given fork digest {:?}",
+                                        gossip_topic.fork_digest
                                     ))
                                 }
                             };

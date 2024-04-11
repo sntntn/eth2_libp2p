@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use libp2p::swarm::ConnectionId;
-use types::altair::containers::LightClientBootstrap;
-use types::{combined::SignedBeaconBlock, deneb::containers::BlobSidecar, preset::Preset};
+use types::{
+    combined::{LightClientBootstrap, SignedBeaconBlock},
+    deneb::containers::BlobSidecar,
+    preset::Preset,
+};
 
 use crate::rpc::methods::{BlobsByRangeRequest, BlobsByRootRequest};
 use crate::rpc::{
@@ -94,7 +97,7 @@ pub enum Response<P: Preset> {
     /// A response to a get BLOBS_BY_ROOT request.
     BlobsByRoot(Option<Arc<BlobSidecar<P>>>),
     /// A response to a LightClientUpdate request.
-    LightClientBootstrap(LightClientBootstrap<P>),
+    LightClientBootstrap(Arc<LightClientBootstrap<P>>),
 }
 
 impl<P: Preset> std::convert::From<Response<P>> for RPCCodedResponse<P> {

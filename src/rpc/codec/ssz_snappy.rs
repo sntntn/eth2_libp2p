@@ -8,15 +8,16 @@ use crate::types::ForkContext;
 use libp2p::bytes::BytesMut;
 use snap::read::FrameDecoder;
 use snap::write::FrameEncoder;
-use ssz::{ContiguousList, SszReadDefault as _, SszWrite as _, H256};
+use ssz::{ContiguousList, SszReadDefault, SszWrite as _, H256};
 use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
+use types::combined::LightClientBootstrap;
 use types::{
-    altair::containers::{LightClientBootstrap, SignedBeaconBlock as AltairSignedBeaconBlock},
+    altair::containers::SignedBeaconBlock as AltairSignedBeaconBlock,
     bellatrix::containers::SignedBeaconBlock as BellatrixSignedBeaconBlock,
     capella::containers::SignedBeaconBlock as CapellaSignedBeaconBlock,
     combined::SignedBeaconBlock,
@@ -577,9 +578,34 @@ fn handle_rpc_response<P: Preset>(
         SupportedProtocol::MetaDataV1 => Ok(Some(RPCResponse::MetaData(MetaData::V1(
             MetaDataV1::from_ssz_default(decoded_buffer)?,
         )))),
-        SupportedProtocol::LightClientBootstrapV1 => Ok(Some(RPCResponse::LightClientBootstrap(
-            LightClientBootstrap::from_ssz_default(decoded_buffer)?,
-        ))),
+        SupportedProtocol::LightClientBootstrapV1 => match fork_name {
+            Some(Phase::Phase0) => Err(RPCError::ErrorResponse(
+                RPCResponseErrorCode::InvalidRequest,
+                format!("light_client_bootstrap topic invalid for given fork {fork_name:?}",),
+            )),
+            Some(Phase::Altair | Phase::Bellatrix) => Ok(Some(RPCResponse::LightClientBootstrap(
+                SszReadDefault::from_ssz_default(decoded_buffer)
+                    .map(LightClientBootstrap::Altair)
+                    .map(Arc::new)?,
+            ))),
+            Some(Phase::Capella) => Ok(Some(RPCResponse::LightClientBootstrap(
+                SszReadDefault::from_ssz_default(decoded_buffer)
+                    .map(LightClientBootstrap::Capella)
+                    .map(Arc::new)?,
+            ))),
+            Some(Phase::Deneb) => Ok(Some(RPCResponse::LightClientBootstrap(
+                SszReadDefault::from_ssz_default(decoded_buffer)
+                    .map(LightClientBootstrap::Deneb)
+                    .map(Arc::new)?,
+            ))),
+            None => Err(RPCError::ErrorResponse(
+                RPCResponseErrorCode::InvalidRequest,
+                format!(
+                    "No context bytes provided for {:?} response",
+                    versioned_protocol
+                ),
+            )),
+        },
         // MetaData V2 responses have no context bytes, so behave similarly to V1 responses
         SupportedProtocol::MetaDataV2 => Ok(Some(RPCResponse::MetaData(MetaData::V2(
             MetaDataV2::from_ssz_default(decoded_buffer)?,
