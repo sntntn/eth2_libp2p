@@ -26,8 +26,8 @@ pub(crate) mod proto {
 
 #[cfg(test)]
 mod test {
-    use gossipsub::rpc_proto::proto::compat;
-    use gossipsub::IdentTopic as Topic;
+    use crate::rpc_proto::proto::compat;
+    use crate::IdentTopic as Topic;
     use libp2p::identity::PeerId;
     use quick_protobuf::{BytesReader, MessageRead, MessageWrite, Writer};
     use rand::Rng;

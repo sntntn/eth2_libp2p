@@ -1,7 +1,6 @@
 use crate::defaults::{
     DEFAULT_BEACON_NODE_DIR, DEFAULT_HARDCODED_NETWORK, DEFAULT_NETWORK_DIR, DEFAULT_ROOT_DIR,
 };
-use crate::gossipsub;
 use crate::listen_addr::{ListenAddr, ListenAddress};
 use crate::rpc::config::{InboundRateLimiterConfig, OutboundRateLimiterConfig};
 use crate::types::{ForkContext, GossipKind};

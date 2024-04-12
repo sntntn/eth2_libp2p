@@ -15,7 +15,6 @@ mod task_executor;
 pub mod common;
 #[allow(clippy::mutable_key_type)] // PeerId in hashmaps are no longer permitted by clippy
 pub mod discovery;
-pub mod gossipsub;
 pub mod listen_addr;
 pub mod metrics;
 pub mod peer_manager;

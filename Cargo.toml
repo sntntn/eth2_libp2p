@@ -25,6 +25,7 @@ futures = { workspace = true }
 futures-ticker = { workspace = true }
 futures-timer = { workspace = true }
 getrandom = { workspace = true }
+gossipsub = { workspace = true }
 grandine_version = { workspace = true }
 helper_functions = { workspace = true }
 hex = { workspace = true }
@@ -62,6 +63,7 @@ void = { workspace = true }
 
 [dev-dependencies]
 async-std = { version = '1.6.3', features = ["unstable"] }
+async-channel = { workspace = true }
 exit-future = { version = '0.2.0' }
 quickcheck = { workspace = true }
 quickcheck_macros = { workspace = true }

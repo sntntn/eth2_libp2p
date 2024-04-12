@@ -1,9 +1,9 @@
-use crate::gossipsub::{
+use crate::types::{EnrForkId, GossipEncoding, GossipKind, GossipTopic};
+use crate::TopicHash;
+use gossipsub::{
     Config as GossipsubConfig, IdentTopic as Topic, PeerScoreParams, PeerScoreThresholds,
     TopicScoreParams,
 };
-use crate::types::{EnrForkId, GossipEncoding, GossipKind, GossipTopic};
-use crate::TopicHash;
 use helper_functions::misc;
 use std::cmp::max;
 use std::collections::HashMap;

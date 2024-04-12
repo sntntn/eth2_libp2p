@@ -4,10 +4,6 @@ use crate::config::{gossipsub_config, GossipsubConfigParams, NetworkLoad};
 use crate::discovery::{
     subnet_predicate, DiscoveredPeers, Discovery, FIND_NODE_QUERY_CLOSEST_PEERS,
 };
-use crate::gossipsub::{
-    self, IdentTopic as Topic, MessageAcceptance, MessageAuthenticity, MessageId, PublishError,
-    TopicScoreParams,
-};
 use crate::peer_manager::{
     config::Config as PeerManagerCfg, peerdb::score::PeerAction, peerdb::score::ReportSource,
     ConnectionDirection, PeerManager, PeerManagerEvent,
@@ -30,6 +26,10 @@ use anyhow::{anyhow, Error, Result};
 use api_types::{PeerRequestId, Request, RequestId, Response};
 use futures::stream::StreamExt;
 use gossipsub_scoring_parameters::{peer_gossip_thresholds, PeerScoreSettings};
+use gossipsub::{
+    IdentTopic as Topic, MessageAcceptance, MessageAuthenticity, MessageId, PublishError,
+    TopicScoreParams,
+};
 use libp2p::multiaddr::{self, Multiaddr, Protocol as MProtocol};
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{Swarm, SwarmEvent};

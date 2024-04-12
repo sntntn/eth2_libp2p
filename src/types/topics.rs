@@ -1,6 +1,5 @@
-use crate::gossipsub::{IdentTopic as Topic, TopicHash};
-
 use enum_iterator::previous;
+use gossipsub::{IdentTopic as Topic, TopicHash};
 use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
 use typenum::Unsigned as _;
