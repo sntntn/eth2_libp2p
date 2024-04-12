@@ -25,11 +25,11 @@ use crate::{task_executor, Eth2Enr};
 use anyhow::{anyhow, Error, Result};
 use api_types::{PeerRequestId, Request, RequestId, Response};
 use futures::stream::StreamExt;
-use gossipsub_scoring_parameters::{peer_gossip_thresholds, PeerScoreSettings};
 use gossipsub::{
     IdentTopic as Topic, MessageAcceptance, MessageAuthenticity, MessageId, PublishError,
     TopicScoreParams,
 };
+use gossipsub_scoring_parameters::{peer_gossip_thresholds, PeerScoreSettings};
 use libp2p::multiaddr::{self, Multiaddr, Protocol as MProtocol};
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{Swarm, SwarmEvent};
@@ -263,10 +263,17 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 message_domain_valid_snappy: chain_config.message_domain_valid_snappy.into(),
                 gossip_max_size: chain_config.gossip_max_size,
             };
+
             config.gs_config = gossipsub_config(
                 config.network_load,
                 ctx.fork_context.clone(),
                 gossipsub_config_params,
+                chain_config.seconds_per_slot.get(),
+                chain_config
+                    .preset_base
+                    .phase0_preset()
+                    .slots_per_epoch()
+                    .get(),
             );
 
             // If metrics are enabled for libp2p build the configuration
