@@ -717,11 +717,7 @@ impl<P: Preset> std::fmt::Display for RPCResponse<P> {
             RPCResponse::Pong(ping) => write!(f, "Pong: {}", ping.data),
             RPCResponse::MetaData(metadata) => write!(f, "Metadata: {}", metadata.seq_number()),
             RPCResponse::LightClientBootstrap(bootstrap) => {
-                write!(
-                    f,
-                    "LightClientBootstrap Slot: {}",
-                    bootstrap.slot()
-                )
+                write!(f, "LightClientBootstrap Slot: {}", bootstrap.slot())
             }
         }
     }
