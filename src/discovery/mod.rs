@@ -1167,6 +1167,7 @@ mod tests {
             }),
             vec![],
             false,
+            3,
             &log,
         );
         let keypair = keypair.into();
