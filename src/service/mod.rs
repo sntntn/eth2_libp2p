@@ -1710,12 +1710,16 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             libp2p::upnp::Event::NewExternalAddr(addr) => {
                 info!(self.log, "UPnP route established"; "addr" => %addr);
                 let mut iter = addr.iter();
-                // Skip Ip address.
-                iter.next();
+                let is_ip6 = {
+                    let addr = iter.next();
+                    matches!(addr, Some(MProtocol::Ip6(_)))
+                };
                 match iter.next() {
                     Some(multiaddr::Protocol::Udp(udp_port)) => match iter.next() {
                         Some(multiaddr::Protocol::QuicV1) => {
-                            if let Err(e) = self.discovery_mut().update_enr_quic_port(udp_port) {
+                            if let Err(e) =
+                                self.discovery_mut().update_enr_quic_port(udp_port, is_ip6)
+                            {
                                 warn!(self.log, "Failed to update ENR"; "error" => e);
                             }
                         }
@@ -1724,7 +1728,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                         }
                     },
                     Some(multiaddr::Protocol::Tcp(tcp_port)) => {
-                        if let Err(e) = self.discovery_mut().update_enr_tcp_port(tcp_port) {
+                        if let Err(e) = self.discovery_mut().update_enr_tcp_port(tcp_port, is_ip6) {
                             warn!(self.log, "Failed to update ENR"; "error" => e);
                         }
                     }
