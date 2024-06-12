@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use libp2p::swarm::ConnectionId;
 use types::{
-    combined::{LightClientBootstrap, SignedBeaconBlock},
+    combined::{
+        LightClientBootstrap, LightClientFinalityUpdate, LightClientOptimisticUpdate,
+        SignedBeaconBlock,
+    },
     deneb::containers::BlobSidecar,
     preset::Preset,
 };
@@ -44,6 +47,10 @@ pub enum Request {
     BlocksByRoot(BlocksByRootRequest),
     // light client bootstrap request
     LightClientBootstrap(LightClientBootstrapRequest),
+    // light client optimistic update request
+    LightClientOptimisticUpdate,
+    // light client finality update request
+    LightClientFinalityUpdate,
     /// A request blobs root request.
     BlobsByRoot(BlobsByRootRequest),
 }
@@ -68,7 +75,9 @@ impl<P: Preset> std::convert::From<Request> for OutboundRequest<P> {
                     }),
                 ),
             },
-            Request::LightClientBootstrap(_) => {
+            Request::LightClientBootstrap(_)
+            | Request::LightClientOptimisticUpdate
+            | Request::LightClientFinalityUpdate => {
                 unreachable!("Grandine never makes an outbound light client request")
             }
             Request::BlobsByRange(r) => OutboundRequest::BlobsByRange(r),
@@ -98,6 +107,10 @@ pub enum Response<P: Preset> {
     BlobsByRoot(Option<Arc<BlobSidecar<P>>>),
     /// A response to a LightClientUpdate request.
     LightClientBootstrap(Arc<LightClientBootstrap<P>>),
+    /// A response to a LightClientOptimisticUpdate request.
+    LightClientOptimisticUpdate(Arc<LightClientOptimisticUpdate<P>>),
+    /// A response to a LightClientFinalityUpdate request.
+    LightClientFinalityUpdate(Arc<LightClientFinalityUpdate<P>>),
 }
 
 impl<P: Preset> std::convert::From<Response<P>> for RPCCodedResponse<P> {
@@ -122,6 +135,12 @@ impl<P: Preset> std::convert::From<Response<P>> for RPCCodedResponse<P> {
             Response::Status(s) => RPCCodedResponse::Success(RPCResponse::Status(s)),
             Response::LightClientBootstrap(b) => {
                 RPCCodedResponse::Success(RPCResponse::LightClientBootstrap(b))
+            }
+            Response::LightClientOptimisticUpdate(o) => {
+                RPCCodedResponse::Success(RPCResponse::LightClientOptimisticUpdate(o))
+            }
+            Response::LightClientFinalityUpdate(f) => {
+                RPCCodedResponse::Success(RPCResponse::LightClientFinalityUpdate(f))
             }
         }
     }

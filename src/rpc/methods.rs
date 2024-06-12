@@ -13,7 +13,10 @@ use try_from_iterator::TryFromIterator as _;
 use typenum::{Unsigned as _, U1024, U128, U256, U768};
 use types::deneb::containers::BlobIdentifier;
 use types::{
-    combined::{LightClientBootstrap, SignedBeaconBlock},
+    combined::{
+        LightClientBootstrap, LightClientFinalityUpdate, LightClientOptimisticUpdate,
+        SignedBeaconBlock,
+    },
     deneb::containers::BlobSidecar,
     phase0::primitives::{Epoch, ForkDigest, Slot, H256},
     preset::Preset,
@@ -530,6 +533,12 @@ pub enum RPCResponse<P: Preset> {
     /// A response to a get LIGHT_CLIENT_BOOTSTRAP request.
     LightClientBootstrap(Arc<LightClientBootstrap<P>>),
 
+    /// A response to a get LIGHT_CLIENT_OPTIMISTIC_UPDATE request.
+    LightClientOptimisticUpdate(Arc<LightClientOptimisticUpdate<P>>),
+
+    /// A response to a get LIGHT_CLIENT_FINALITY_UPDATE request.
+    LightClientFinalityUpdate(Arc<LightClientFinalityUpdate<P>>),
+
     /// A response to a get BLOBS_BY_ROOT request.
     BlobsByRoot(Arc<BlobSidecar<P>>),
 
@@ -628,6 +637,8 @@ impl<P: Preset> RPCCodedResponse<P> {
                 RPCResponse::Pong(_) => false,
                 RPCResponse::MetaData(_) => false,
                 RPCResponse::LightClientBootstrap(_) => false,
+                RPCResponse::LightClientOptimisticUpdate(_) => false,
+                RPCResponse::LightClientFinalityUpdate(_) => false,
             },
             RPCCodedResponse::Error(_, _) => true,
             // Stream terminations are part of responses that have chunks
@@ -666,6 +677,8 @@ impl<P: Preset> RPCResponse<P> {
             RPCResponse::Pong(_) => Protocol::Ping,
             RPCResponse::MetaData(_) => Protocol::MetaData,
             RPCResponse::LightClientBootstrap(_) => Protocol::LightClientBootstrap,
+            RPCResponse::LightClientOptimisticUpdate(_) => Protocol::LightClientOptimisticUpdate,
+            RPCResponse::LightClientFinalityUpdate(_) => Protocol::LightClientFinalityUpdate,
         }
     }
 }
@@ -718,6 +731,20 @@ impl<P: Preset> std::fmt::Display for RPCResponse<P> {
             RPCResponse::MetaData(metadata) => write!(f, "Metadata: {}", metadata.seq_number()),
             RPCResponse::LightClientBootstrap(bootstrap) => {
                 write!(f, "LightClientBootstrap Slot: {}", bootstrap.slot())
+            }
+            RPCResponse::LightClientOptimisticUpdate(update) => {
+                write!(
+                    f,
+                    "LightClientOptimisticUpdate Slot: {}",
+                    update.signature_slot()
+                )
+            }
+            RPCResponse::LightClientFinalityUpdate(update) => {
+                write!(
+                    f,
+                    "LightClientFinalityUpdate Slot: {}",
+                    update.signature_slot()
+                )
             }
         }
     }

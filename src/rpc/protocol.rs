@@ -113,6 +113,12 @@ pub enum Protocol {
     /// The `LightClientBootstrap` protocol name.
     #[strum(serialize = "light_client_bootstrap")]
     LightClientBootstrap,
+    /// The `LightClientOptimisticUpdate` protocol name.
+    #[strum(serialize = "light_client_optimistic_update")]
+    LightClientOptimisticUpdate,
+    /// The `LightClientFinalityUpdate` protocol name.
+    #[strum(serialize = "light_client_finality_update")]
+    LightClientFinalityUpdate,
 }
 
 impl Protocol {
@@ -127,12 +133,16 @@ impl Protocol {
             Protocol::Ping => None,
             Protocol::MetaData => None,
             Protocol::LightClientBootstrap => None,
+            Protocol::LightClientOptimisticUpdate => None,
+            Protocol::LightClientFinalityUpdate => None,
         }
     }
 }
 
+/// Protocol names to be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, AsRefStr)]
+#[strum(serialize_all = "snake_case")]
 /// RPC Encondings supported.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Encoding {
     SSZSnappy,
 }
@@ -152,6 +162,8 @@ pub enum SupportedProtocol {
     MetaDataV1,
     MetaDataV2,
     LightClientBootstrapV1,
+    LightClientOptimisticUpdateV1,
+    LightClientFinalityUpdateV1,
 }
 
 impl SupportedProtocol {
@@ -169,6 +181,8 @@ impl SupportedProtocol {
             SupportedProtocol::MetaDataV1 => "1",
             SupportedProtocol::MetaDataV2 => "2",
             SupportedProtocol::LightClientBootstrapV1 => "1",
+            SupportedProtocol::LightClientOptimisticUpdateV1 => "1",
+            SupportedProtocol::LightClientFinalityUpdateV1 => "1",
         }
     }
 
@@ -186,6 +200,10 @@ impl SupportedProtocol {
             SupportedProtocol::MetaDataV1 => Protocol::MetaData,
             SupportedProtocol::MetaDataV2 => Protocol::MetaData,
             SupportedProtocol::LightClientBootstrapV1 => Protocol::LightClientBootstrap,
+            SupportedProtocol::LightClientOptimisticUpdateV1 => {
+                Protocol::LightClientOptimisticUpdate
+            }
+            SupportedProtocol::LightClientFinalityUpdateV1 => Protocol::LightClientFinalityUpdate,
         }
     }
 
@@ -240,6 +258,14 @@ impl<P: Preset> UpgradeInfo for RPCProtocol<P> {
         if self.enable_light_client_server {
             supported_protocols.push(ProtocolId::new(
                 SupportedProtocol::LightClientBootstrapV1,
+                Encoding::SSZSnappy,
+            ));
+            supported_protocols.push(ProtocolId::new(
+                SupportedProtocol::LightClientOptimisticUpdateV1,
+                Encoding::SSZSnappy,
+            ));
+            supported_protocols.push(ProtocolId::new(
+                SupportedProtocol::LightClientFinalityUpdateV1,
                 Encoding::SSZSnappy,
             ));
         }
@@ -315,6 +341,8 @@ impl ProtocolId {
                 LightClientBootstrapRequest::SIZE.get(),
                 LightClientBootstrapRequest::SIZE.get(),
             ),
+            Protocol::LightClientOptimisticUpdate => RpcLimits::new(0, 0),
+            Protocol::LightClientFinalityUpdate => RpcLimits::new(0, 0),
             Protocol::MetaData => RpcLimits::new(0, 0), // Metadata requests are empty
         }
     }
@@ -336,6 +364,8 @@ impl ProtocolId {
                 LightClientBootstrapRequest::SIZE.get(),
                 LightClientBootstrapRequest::SIZE.get(),
             ),
+            Protocol::LightClientOptimisticUpdate => RpcLimits::new(0, 0),
+            Protocol::LightClientFinalityUpdate => RpcLimits::new(0, 0),
         }
     }
 
@@ -347,7 +377,9 @@ impl ProtocolId {
             | SupportedProtocol::BlocksByRootV2
             | SupportedProtocol::BlobsByRangeV1
             | SupportedProtocol::BlobsByRootV1
-            | SupportedProtocol::LightClientBootstrapV1 => true,
+            | SupportedProtocol::LightClientBootstrapV1
+            | SupportedProtocol::LightClientOptimisticUpdateV1
+            | SupportedProtocol::LightClientFinalityUpdateV1 => true,
             SupportedProtocol::StatusV1
             | SupportedProtocol::BlocksByRootV1
             | SupportedProtocol::BlocksByRangeV1
@@ -424,6 +456,12 @@ where
                 SupportedProtocol::MetaDataV2 => {
                     Ok((InboundRequest::MetaData(MetadataRequest::new_v2()), socket))
                 }
+                SupportedProtocol::LightClientOptimisticUpdateV1 => {
+                    Ok((InboundRequest::LightClientOptimisticUpdate, socket))
+                }
+                SupportedProtocol::LightClientFinalityUpdateV1 => {
+                    Ok((InboundRequest::LightClientFinalityUpdate, socket))
+                }
                 _ => {
                     match tokio::time::timeout(
                         Duration::from_secs(REQUEST_TIMEOUT),
@@ -452,6 +490,8 @@ pub enum InboundRequest<P: Preset> {
     BlobsByRange(BlobsByRangeRequest),
     BlobsByRoot(BlobsByRootRequest),
     LightClientBootstrap(LightClientBootstrapRequest),
+    LightClientOptimisticUpdate,
+    LightClientFinalityUpdate,
     Ping(Ping),
     MetaData(MetadataRequest<P>),
 }
@@ -468,6 +508,8 @@ impl<P: Preset> InboundRequest<P> {
             InboundRequest::BlobsByRange(req) => req.max_blobs_requested::<P>(),
             InboundRequest::BlobsByRoot(req) => req.blob_ids.len() as u64,
             InboundRequest::LightClientBootstrap(_) => 1,
+            InboundRequest::LightClientOptimisticUpdate => 1,
+            InboundRequest::LightClientFinalityUpdate => 1,
             InboundRequest::Ping(_) => 1,
             InboundRequest::MetaData(_) => 1,
         }
@@ -494,6 +536,12 @@ impl<P: Preset> InboundRequest<P> {
                 MetadataRequest::V2(_) => SupportedProtocol::MetaDataV2,
             },
             InboundRequest::LightClientBootstrap(_) => SupportedProtocol::LightClientBootstrapV1,
+            InboundRequest::LightClientOptimisticUpdate => {
+                SupportedProtocol::LightClientOptimisticUpdateV1
+            }
+            InboundRequest::LightClientFinalityUpdate => {
+                SupportedProtocol::LightClientFinalityUpdateV1
+            }
         }
     }
 
@@ -512,6 +560,8 @@ impl<P: Preset> InboundRequest<P> {
             InboundRequest::Ping(_) => unreachable!(),
             InboundRequest::MetaData(_) => unreachable!(),
             InboundRequest::LightClientBootstrap(_) => unreachable!(),
+            InboundRequest::LightClientFinalityUpdate => unreachable!(),
+            InboundRequest::LightClientOptimisticUpdate => unreachable!(),
         }
     }
 }
@@ -618,6 +668,12 @@ impl<P: Preset> std::fmt::Display for InboundRequest<P> {
             InboundRequest::MetaData(_) => write!(f, "MetaData request"),
             InboundRequest::LightClientBootstrap(bootstrap) => {
                 write!(f, "LightClientBootstrap: {}", bootstrap.root)
+            }
+            InboundRequest::LightClientOptimisticUpdate => {
+                write!(f, "Light client optimistic update request")
+            }
+            InboundRequest::LightClientFinalityUpdate => {
+                write!(f, "Light client finality update request")
             }
         }
     }

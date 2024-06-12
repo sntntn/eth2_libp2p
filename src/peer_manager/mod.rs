@@ -554,7 +554,11 @@ impl PeerManager {
                     Protocol::BlocksByRange => PeerAction::MidToleranceError,
                     Protocol::BlocksByRoot => PeerAction::MidToleranceError,
                     Protocol::BlobsByRange => PeerAction::MidToleranceError,
-                    Protocol::LightClientBootstrap => PeerAction::LowToleranceError,
+                    // Grandine does not currently make light client requests; therefore, this
+                    // is an unexpected scenario. We do not ban the peer for rate limiting.
+                    Protocol::LightClientBootstrap => return,
+                    Protocol::LightClientOptimisticUpdate => return,
+                    Protocol::LightClientFinalityUpdate => return,
                     Protocol::BlobsByRoot => PeerAction::MidToleranceError,
                     Protocol::Goodbye => PeerAction::LowToleranceError,
                     Protocol::MetaData => PeerAction::LowToleranceError,
@@ -577,6 +581,8 @@ impl PeerManager {
                     Protocol::BlobsByRoot => return,
                     Protocol::Goodbye => return,
                     Protocol::LightClientBootstrap => return,
+                    Protocol::LightClientOptimisticUpdate => return,
+                    Protocol::LightClientFinalityUpdate => return,
                     Protocol::MetaData => PeerAction::Fatal,
                     Protocol::Status => PeerAction::Fatal,
                 }
@@ -594,6 +600,8 @@ impl PeerManager {
                     Protocol::BlobsByRange => PeerAction::MidToleranceError,
                     Protocol::BlobsByRoot => PeerAction::MidToleranceError,
                     Protocol::LightClientBootstrap => return,
+                    Protocol::LightClientOptimisticUpdate => return,
+                    Protocol::LightClientFinalityUpdate => return,
                     Protocol::Goodbye => return,
                     Protocol::MetaData => return,
                     Protocol::Status => return,
