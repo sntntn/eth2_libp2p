@@ -406,7 +406,7 @@ fn context_bytes<P: Preset>(
                             fork_context.to_context_bytes(Phase::Capella)
                         }
                         SignedBeaconBlock::Bellatrix { .. } => {
-                            // Merge context being `None` implies that "merge never happened".
+                            // Bellatrix context being `None` implies that "merge never happened".
                             fork_context.to_context_bytes(Phase::Bellatrix)
                         }
                         SignedBeaconBlock::Altair { .. } => {
@@ -847,7 +847,6 @@ mod tests {
     fn phase0_block<P: Preset>() -> SignedBeaconBlock<P> {
         factory::full_phase0_signed_beacon_block().into()
     }
-
     fn altair_block<P: Preset>() -> SignedBeaconBlock<P> {
         factory::full_altair_signed_beacon_block().into()
     }
@@ -862,8 +861,10 @@ mod tests {
         Arc::new(BlobSidecar::default())
     }
 
-    /// Merge block with length < max_rpc_size.
-    fn merge_block_small<P: Preset>(fork_context: &ForkContext) -> BellatrixSignedBeaconBlock<P> {
+    /// Bellatrix block with length < max_rpc_size.
+    fn bellatrix_block_small<P: Preset>(
+        fork_context: &ForkContext,
+    ) -> BellatrixSignedBeaconBlock<P> {
         let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
         let txs =
             Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(5000)).unwrap());
@@ -889,10 +890,12 @@ mod tests {
         block
     }
 
-    /// Merge block with length > MAX_RPC_SIZE.
+    /// Bellatrix block with length > MAX_RPC_SIZE.
     /// The max limit for a merge block is in the order of ~16GiB which wouldn't fit in memory.
     /// Hence, we generate a merge block just greater than `MAX_RPC_SIZE` to test rejection on the rpc layer.
-    fn merge_block_large<P: Preset>(fork_context: &ForkContext) -> BellatrixSignedBeaconBlock<P> {
+    fn bellatrix_block_large<P: Preset>(
+        fork_context: &ForkContext,
+    ) -> BellatrixSignedBeaconBlock<P> {
         let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
         let txs =
             Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(100000)).unwrap());
@@ -1267,26 +1270,26 @@ mod tests {
         );
 
         let fork_context = ForkContext::dummy::<Mainnet>(&config, Phase::Bellatrix);
-        let merge_block_small = merge_block_small::<Mainnet>(&fork_context);
-        let merge_block_large = merge_block_large::<Mainnet>(&fork_context);
+        let bellatrix_block_small = bellatrix_block_small::<Mainnet>(&fork_context);
+        let bellatrix_block_large = bellatrix_block_large::<Mainnet>(&fork_context);
 
         assert_eq!(
             encode_then_decode_response::<Mainnet>(
                 &config,
                 SupportedProtocol::BlocksByRangeV2,
                 RPCCodedResponse::Success(RPCResponse::BlocksByRange(Arc::new(
-                    types::combined::SignedBeaconBlock::Bellatrix(merge_block_small.clone())
+                    types::combined::SignedBeaconBlock::Bellatrix(bellatrix_block_small.clone())
                 ))),
                 Phase::Bellatrix,
             ),
             Ok(Some(RPCResponse::BlocksByRange(Arc::new(
-                types::combined::SignedBeaconBlock::Bellatrix(merge_block_small.clone())
+                types::combined::SignedBeaconBlock::Bellatrix(bellatrix_block_small.clone())
             ))))
         );
 
         let mut encoded = encode_without_length_checks::<Mainnet>(
             &config,
-            merge_block_large.to_ssz().unwrap(),
+            bellatrix_block_large.to_ssz().unwrap(),
             Phase::Bellatrix,
         )
         .unwrap();
@@ -1332,18 +1335,18 @@ mod tests {
                 &config,
                 SupportedProtocol::BlocksByRootV2,
                 RPCCodedResponse::Success(RPCResponse::BlocksByRoot(Arc::new(
-                    types::combined::SignedBeaconBlock::Bellatrix(merge_block_small.clone())
+                    types::combined::SignedBeaconBlock::Bellatrix(bellatrix_block_small.clone())
                 ))),
                 Phase::Bellatrix,
             ),
             Ok(Some(RPCResponse::BlocksByRoot(Arc::new(
-                types::combined::SignedBeaconBlock::Bellatrix(merge_block_small)
+                types::combined::SignedBeaconBlock::Bellatrix(bellatrix_block_small)
             ))))
         );
 
         let mut encoded = encode_without_length_checks::<Mainnet>(
             &config,
-            merge_block_large.to_ssz().unwrap(),
+            bellatrix_block_large.to_ssz().unwrap(),
             Phase::Bellatrix,
         )
         .unwrap();
