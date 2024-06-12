@@ -11,9 +11,7 @@ edition = { workspace = true }
 anyhow = { workspace = true }
 async-channel = { workspace = true }
 asynchronous-codec = { workspace = true }
-base64 = { workspace = true }
 bls = { workspace = true }
-byteorder = { workspace = true }
 bytes = { workspace = true }
 delay_map = { workspace = true }
 dirs = { workspace = true }
@@ -22,14 +20,11 @@ either = { workspace = true }
 enum-iterator = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
-futures-ticker = { workspace = true }
 futures-timer = { workspace = true }
-getrandom = { workspace = true }
 gossipsub = { workspace = true }
 grandine_version = { workspace = true }
 helper_functions = { workspace = true }
 hex = { workspace = true }
-hex_fmt = { workspace = true }
 instant = { workspace = true }
 lazy_static = { workspace = true }
 libp2p = { workspace = true }
@@ -54,7 +49,6 @@ tiny-keccak = { workspace = true }
 tokio = { workspace = true }
 tokio-io-timeout = { workspace = true }
 tokio-util = { workspace = true }
-tracing = { workspace = true }
 try_from_iterator = { workspace = true }
 typenum = { workspace = true }
 types = { workspace = true }
