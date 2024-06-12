@@ -498,8 +498,10 @@ pub enum InboundRequest<P: Preset> {
 
 /// Implements the encoding per supported protocol for `RPCRequest`.
 impl<P: Preset> InboundRequest<P> {
-    /// Number of responses expected for this request.
-    pub fn expected_responses(&self) -> u64 {
+    /* These functions are used in the handler for stream management */
+
+    /// Maximum number of responses expected for this request.
+    pub fn max_responses(&self) -> u64 {
         match self {
             InboundRequest::Status(_) => 1,
             InboundRequest::Goodbye(_) => 0,
