@@ -1412,14 +1412,21 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             // Silencing this event breaks the API contract with RPC where every request ends with
             // - A stream termination event, or
             // - An RPCError event
-            if !matches!(event.event, HandlerEvent::Err(HandlerErr::Outbound { .. })) {
+            return if let HandlerEvent::Err(HandlerErr::Outbound {
+                id: RequestId::Application(id),
+                error,
+                ..
+            }) = event.event
+            {
+                Some(NetworkEvent::RPCFailed { peer_id, id, error })
+            } else {
                 debug!(
                     self.log,
                     "Ignoring rpc message of disconnecting peer";
                     event
                 );
-                return None;
-            }
+                None
+            };
         }
 
         let handler_id = event.conn_id;
