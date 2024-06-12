@@ -25,7 +25,6 @@ gossipsub = { workspace = true }
 grandine_version = { workspace = true }
 helper_functions = { workspace = true }
 hex = { workspace = true }
-instant = { workspace = true }
 lazy_static = { workspace = true }
 libp2p = { workspace = true }
 libp2p-mplex = { workspace = true }
