@@ -996,6 +996,12 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             .goodbye_peer(peer_id, reason, source);
     }
 
+    /// Hard (ungraceful) disconnect for testing purposes only
+    /// Use goodbye_peer for disconnections, do not use this function.
+    pub fn __hard_disconnect_testing_only(&mut self, peer_id: PeerId) {
+        let _ = self.swarm.disconnect_peer_id(peer_id);
+    }
+
     /// Returns an iterator over all enr entries in the DHT.
     pub fn enr_entries(&self) -> Vec<Enr> {
         self.discovery().table_entries_enr()
@@ -1402,12 +1408,18 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         let peer_id = event.peer_id;
 
         if !self.peer_manager().is_connected(&peer_id) {
-            debug!(
-                self.log,
-                "Ignoring rpc message of disconnecting peer";
-                event
-            );
-            return None;
+            // Sync expects a RPCError::Disconnected to drop associated lookups with this peer.
+            // Silencing this event breaks the API contract with RPC where every request ends with
+            // - A stream termination event, or
+            // - An RPCError event
+            if !matches!(event.event, HandlerEvent::Err(HandlerErr::Outbound { .. })) {
+                debug!(
+                    self.log,
+                    "Ignoring rpc message of disconnecting peer";
+                    event
+                );
+                return None;
+            }
         }
 
         let handler_id = event.conn_id;
