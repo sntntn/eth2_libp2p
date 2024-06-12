@@ -150,7 +150,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
     ) -> Result<(Self, Arc<NetworkGlobals>)> {
         let log = log.new(o!("service"=> "libp2p"));
 
-        let mut config = ctx.config.clone();
+        let config = ctx.config.clone();
         trace!(log, "Libp2p Service starting");
         // initialise the node's ID
         let local_keypair = utils::load_private_key(&config, &log);
@@ -191,7 +191,24 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             .eth2()
             .expect("Local ENR must have a fork id");
 
-        let score_settings = PeerScoreSettings::new(chain_config, &config.gs_config);
+        let gossipsub_config_params = GossipsubConfigParams {
+            message_domain_valid_snappy: chain_config.message_domain_valid_snappy.into(),
+            gossip_max_size: chain_config.gossip_max_size,
+        };
+
+        let gs_config = gossipsub_config(
+            config.network_load,
+            ctx.fork_context.clone(),
+            gossipsub_config_params,
+            chain_config.seconds_per_slot.get(),
+            chain_config
+                .preset_base
+                .phase0_preset()
+                .slots_per_epoch()
+                .get(),
+        );
+
+        let score_settings = PeerScoreSettings::new(chain_config, gs_config.mesh_n());
 
         let gossip_cache = {
             let slot_duration = std::time::Duration::from_secs(chain_config.seconds_per_slot.get());
@@ -258,23 +275,6 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 max_subscriptions_per_request: max_topics * 2,
             };
 
-            let gossipsub_config_params = GossipsubConfigParams {
-                message_domain_valid_snappy: chain_config.message_domain_valid_snappy.into(),
-                gossip_max_size: chain_config.gossip_max_size,
-            };
-
-            config.gs_config = gossipsub_config(
-                config.network_load,
-                ctx.fork_context.clone(),
-                gossipsub_config_params,
-                chain_config.seconds_per_slot.get(),
-                chain_config
-                    .preset_base
-                    .phase0_preset()
-                    .slots_per_epoch()
-                    .get(),
-            );
-
             // If metrics are enabled for libp2p build the configuration
             let gossipsub_metrics = ctx.libp2p_registry.as_mut().map(|registry| {
                 (
@@ -283,10 +283,10 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 )
             });
 
-            let snappy_transform = SnappyTransform::new(config.gs_config.max_transmit_size());
+            let snappy_transform = SnappyTransform::new(gs_config.max_transmit_size());
             let mut gossipsub = Gossipsub::new_with_subscription_filter_and_transform(
                 MessageAuthenticity::Anonymous,
-                config.gs_config.clone(),
+                gs_config.clone(),
                 gossipsub_metrics,
                 filter,
                 snappy_transform,

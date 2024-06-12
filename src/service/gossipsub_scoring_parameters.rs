@@ -1,9 +1,6 @@
 use crate::types::{EnrForkId, GossipEncoding, GossipKind, GossipTopic};
 use crate::TopicHash;
-use gossipsub::{
-    Config as GossipsubConfig, IdentTopic as Topic, PeerScoreParams, PeerScoreThresholds,
-    TopicScoreParams,
-};
+use gossipsub::{IdentTopic as Topic, PeerScoreParams, PeerScoreThresholds, TopicScoreParams};
 use helper_functions::misc;
 use std::cmp::max;
 use std::collections::HashMap;
@@ -61,7 +58,7 @@ pub struct PeerScoreSettings<P: Preset> {
 }
 
 impl<P: Preset> PeerScoreSettings<P> {
-    pub fn new(chain_config: &ChainConfig, gs_config: &GossipsubConfig) -> PeerScoreSettings<P> {
+    pub fn new(chain_config: &ChainConfig, mesh_n: usize) -> PeerScoreSettings<P> {
         let slot = Duration::from_secs(chain_config.seconds_per_slot.get());
         let beacon_attestation_subnet_weight = 1.0 / AttestationSubnetCount::U64 as f64;
         let max_positive_score = (MAX_IN_MESH_SCORE + MAX_FIRST_MESSAGE_DELIVERIES_SCORE)
@@ -79,7 +76,7 @@ impl<P: Preset> PeerScoreSettings<P> {
             max_positive_score,
             decay_interval: max(Duration::from_secs(1), slot),
             decay_to_zero: 0.01,
-            mesh_n: gs_config.mesh_n(),
+            mesh_n,
             target_aggregators_per_committee: TARGET_AGGREGATORS_PER_COMMITTEE.get(),
             attestation_subnet_count: AttestationSubnetCount::U64,
             phantom: PhantomData,
