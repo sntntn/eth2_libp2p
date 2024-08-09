@@ -402,7 +402,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         let upnp = Toggle::from(
             config
                 .upnp_enabled
-                .then_some(libp2p::upnp::tokio::Behaviour::default()),
+                .then(libp2p::upnp::tokio::Behaviour::default),
         );
         let behaviour = {
             Behaviour {
