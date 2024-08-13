@@ -188,7 +188,7 @@ mod tests {
 
         let snappy_protocol_id = ProtocolId::new(SupportedProtocol::StatusV1, Encoding::SSZSnappy);
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(
-            &Config::mainnet().rapid_upgrade(),
+            &Config::mainnet().rapid_upgrade().into(),
             Phase::Phase0,
         ));
         let mut snappy_outbound_codec = SSZSnappyOutboundCodec::<Mainnet>::new(
@@ -225,7 +225,7 @@ mod tests {
         let snappy_protocol_id = ProtocolId::new(SupportedProtocol::StatusV1, Encoding::SSZSnappy);
 
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(
-            &Config::mainnet().rapid_upgrade(),
+            &Config::mainnet().rapid_upgrade().into(),
             Phase::Phase0,
         ));
 
@@ -258,7 +258,7 @@ mod tests {
 
         // Response limits
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(
-            &Config::mainnet().rapid_upgrade(),
+            &Config::mainnet().rapid_upgrade().into(),
             Phase::Phase0,
         ));
 

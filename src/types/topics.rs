@@ -24,6 +24,7 @@ pub const BEACON_BLOCK_TOPIC: &str = "beacon_block";
 pub const BEACON_AGGREGATE_AND_PROOF_TOPIC: &str = "beacon_aggregate_and_proof";
 pub const BEACON_ATTESTATION_PREFIX: &str = "beacon_attestation_";
 pub const BLOB_SIDECAR_PREFIX: &str = "blob_sidecar_";
+pub const DATA_COLUMN_SIDECAR_PREFIX: &str = "data_column_sidecar_";
 pub const VOLUNTARY_EXIT_TOPIC: &str = "voluntary_exit";
 pub const PROPOSER_SLASHING_TOPIC: &str = "proposer_slashing";
 pub const ATTESTER_SLASHING_TOPIC: &str = "attester_slashing";
@@ -119,6 +120,8 @@ pub enum GossipKind {
     BeaconAggregateAndProof,
     /// Topic for publishing BlobSidecars.
     BlobSidecar(u64),
+    /// Topic for publishing DataColumnSidecars.
+    DataColumnSidecar(SubnetId),
     /// Topic for publishing raw attestations on a particular subnet.
     #[strum(serialize = "beacon_attestation")]
     Attestation(SubnetId),
@@ -150,6 +153,9 @@ impl std::fmt::Display for GossipKind {
             }
             GossipKind::BlobSidecar(blob_index) => {
                 write!(f, "{}{}", BLOB_SIDECAR_PREFIX, blob_index)
+            }
+            GossipKind::DataColumnSidecar(column_index) => {
+                write!(f, "{}{}", DATA_COLUMN_SIDECAR_PREFIX, column_index)
             }
             x => f.write_str(x.as_ref()),
         }
@@ -237,6 +243,7 @@ impl GossipTopic {
         match self.kind() {
             GossipKind::Attestation(subnet_id) => Some(Subnet::Attestation(*subnet_id)),
             GossipKind::SyncCommitteeMessage(subnet_id) => Some(Subnet::SyncCommittee(*subnet_id)),
+            GossipKind::DataColumnSidecar(subnet_id) => Some(Subnet::DataColumn(*subnet_id)),
             _ => None,
         }
     }
@@ -275,6 +282,9 @@ impl std::fmt::Display for GossipTopic {
             GossipKind::BlobSidecar(blob_index) => {
                 format!("{}{}", BLOB_SIDECAR_PREFIX, blob_index)
             }
+            GossipKind::DataColumnSidecar(index) => {
+                format!("{}{}", DATA_COLUMN_SIDECAR_PREFIX, index)
+            }
             GossipKind::BlsToExecutionChange => BLS_TO_EXECUTION_CHANGE_TOPIC.into(),
             GossipKind::LightClientFinalityUpdate => LIGHT_CLIENT_FINALITY_UPDATE.into(),
             GossipKind::LightClientOptimisticUpdate => LIGHT_CLIENT_OPTIMISTIC_UPDATE.into(),
@@ -295,6 +305,7 @@ impl From<Subnet> for GossipKind {
         match subnet_id {
             Subnet::Attestation(s) => GossipKind::Attestation(s),
             Subnet::SyncCommittee(s) => GossipKind::SyncCommitteeMessage(s),
+            Subnet::DataColumn(s) => GossipKind::DataColumnSidecar(s),
         }
     }
 }
@@ -316,6 +327,8 @@ fn subnet_topic_index(topic: &str) -> Option<GossipKind> {
         ));
     } else if let Some(index) = topic.strip_prefix(BLOB_SIDECAR_PREFIX) {
         return Some(GossipKind::BlobSidecar(index.parse::<u64>().ok()?));
+    } else if let Some(index) = topic.strip_prefix(DATA_COLUMN_SIDECAR_PREFIX) {
+        return Some(GossipKind::DataColumnSidecar(index.parse::<u64>().ok()?));
     }
     None
 }

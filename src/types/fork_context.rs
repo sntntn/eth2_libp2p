@@ -1,4 +1,5 @@
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 use helper_functions::misc;
 use std::collections::HashMap;
@@ -12,6 +13,7 @@ use types::{
 /// Provides fork specific info like the current phase and the fork digests corresponding to every valid fork.
 #[derive(Debug)]
 pub struct ForkContext {
+    chain_config: Arc<Config>,
     current_fork: RwLock<Phase>,
     fork_to_digest: HashMap<Phase, ForkDigest>,
     digest_to_fork: HashMap<ForkDigest, Phase>,
@@ -21,7 +23,7 @@ impl ForkContext {
     /// Creates a new `ForkContext` object by enumerating all enabled forks and computing their
     /// fork digest.
     pub fn new<P: Preset>(
-        config: &Config,
+        config: &Arc<Config>,
         current_slot: Slot,
         genesis_validators_root: H256,
     ) -> Self {
@@ -35,16 +37,18 @@ impl ForkContext {
             .collect::<HashMap<_, _>>();
 
         let digest_to_fork = fork_to_digest.iter().map(|(k, v)| (*v, *k)).collect();
+        let current_fork = RwLock::new(config.phase_at_slot::<P>(current_slot));
 
         Self {
-            current_fork: RwLock::new(config.phase_at_slot::<P>(current_slot)),
+            chain_config: config.clone(),
+            current_fork,
             fork_to_digest,
             digest_to_fork,
         }
     }
 
     /// Returns a dummy fork context for testing.
-    pub fn dummy<P: Preset>(config: &Config, phase: Phase) -> ForkContext {
+    pub fn dummy<P: Preset>(config: &Arc<Config>, phase: Phase) -> ForkContext {
         let current_slot = config
             .fork_slot::<P>(phase)
             .expect("all phases should be enabled in configuration");
@@ -90,5 +94,9 @@ impl ForkContext {
     /// Returns all `fork_digest`s that are currently in the `ForkContext` object.
     pub fn all_fork_digests(&self) -> Vec<ForkDigest> {
         self.digest_to_fork.keys().cloned().collect()
+    }
+
+    pub fn chain_config(&self) -> &Arc<Config> {
+        &self.chain_config
     }
 }

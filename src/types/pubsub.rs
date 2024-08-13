@@ -2,6 +2,7 @@
 
 use crate::types::{ForkContext, GossipEncoding, GossipKind, GossipTopic};
 use crate::TopicHash;
+use helper_functions::misc;
 use snap::raw::{decompress_len, Decoder, Encoder};
 use ssz::{SszReadDefault, SszWrite as _, WriteError};
 use std::boxed::Box;
@@ -19,6 +20,7 @@ use types::{
         SignedAggregateAndProof, SignedBeaconBlock,
     },
     deneb::containers::{BlobSidecar, SignedBeaconBlock as DenebBeaconBlock},
+    eip7594::DataColumnSidecar,
     electra::containers::{
         Attestation as ElectraAttestation, AttesterSlashing as ElectraAttesterSlashing,
         SignedAggregateAndProof as ElectraSignedAggregateAndProof,
@@ -43,6 +45,8 @@ pub enum PubsubMessage<P: Preset> {
     BeaconBlock(Arc<SignedBeaconBlock<P>>),
     /// Gossipsub message providing notification of a [`BlobSidecar`] along with the subnet id where it was received.
     BlobSidecar(Box<(SubnetId, Arc<BlobSidecar<P>>)>),
+    /// Gossipsub message providing notification of a [`DataColumnSidecar`] along with the subnet id where it was received.
+    DataColumnSidecar(Box<(SubnetId, Arc<DataColumnSidecar<P>>)>),
     /// Gossipsub message providing notification of a Aggregate attestation and associated proof.
     AggregateAndProofAttestation(Arc<SignedAggregateAndProof<P>>),
     /// Gossipsub message providing notification of a raw un-aggregated attestation with its shard id.
@@ -138,6 +142,9 @@ impl<P: Preset> PubsubMessage<P> {
             PubsubMessage::BeaconBlock(_) => GossipKind::BeaconBlock,
             PubsubMessage::BlobSidecar(blob_sidecar_data) => {
                 GossipKind::BlobSidecar(blob_sidecar_data.0)
+            }
+            PubsubMessage::DataColumnSidecar(column_sidecar_data) => {
+                GossipKind::DataColumnSidecar(column_sidecar_data.0)
             }
             PubsubMessage::AggregateAndProofAttestation(_) => GossipKind::BeaconAggregateAndProof,
             PubsubMessage::Attestation(subnet_id, _) => GossipKind::Attestation(*subnet_id),
@@ -281,6 +288,36 @@ impl<P: Preset> PubsubMessage<P> {
                             )
                             | None => Err(format!(
                                 "beacon_blobs_and_sidecar topic invalid for given fork digest {:?}",
+                                gossip_topic.fork_digest
+                            )),
+                        }
+                    }
+                    GossipKind::DataColumnSidecar(subnet_id) => {
+                        match fork_context.from_context_bytes(gossip_topic.fork_digest) {
+                            // TODO(das): Remove Deneb fork
+                            Some(fork) if *fork >= Phase::Deneb => {
+                                let col_sidecar = Arc::new(
+                                    DataColumnSidecar::from_ssz_default(data)
+                                        .map_err(|e| format!("{:?}", e))?,
+                                );
+                                let sidecar_epoch =
+                                    misc::compute_epoch_at_slot::<P>(col_sidecar.slot());
+                                let peer_das_enabled =
+                                    sidecar_epoch >= fork_context.chain_config().eip7594_fork_epoch;
+                                if peer_das_enabled {
+                                    Ok(PubsubMessage::DataColumnSidecar(Box::new((
+                                        *subnet_id,
+                                        col_sidecar,
+                                    ))))
+                                } else {
+                                    Err(format!(
+                                        "data_column_sidecar topic invalid for given fork digest {:?}",
+                                        gossip_topic.fork_digest
+                                    ))
+                                }
+                            }
+                            Some(_) | None => Err(format!(
+                                "data_column_sidecar topic invalid for given fork digest {:?}",
                                 gossip_topic.fork_digest
                             )),
                         }
@@ -456,6 +493,7 @@ impl<P: Preset> PubsubMessage<P> {
         match &self {
             PubsubMessage::BeaconBlock(data) => data.to_ssz(),
             PubsubMessage::BlobSidecar(data) => data.1.to_ssz(),
+            PubsubMessage::DataColumnSidecar(data) => data.1.to_ssz(),
             PubsubMessage::AggregateAndProofAttestation(data) => data.to_ssz(),
             PubsubMessage::VoluntaryExit(data) => data.to_ssz(),
             PubsubMessage::ProposerSlashing(data) => data.to_ssz(),
@@ -483,6 +521,12 @@ impl<P: Preset> std::fmt::Display for PubsubMessage<P> {
                 f,
                 "BlobSidecar: slot: {}, blob index: {}",
                 data.1.signed_block_header.message.slot, data.1.index,
+            ),
+            PubsubMessage::DataColumnSidecar(data) => write!(
+                f,
+                "DataColumnSidecar: slot: {}, column index: {}",
+                data.1.slot(),
+                data.1.index,
             ),
             PubsubMessage::AggregateAndProofAttestation(att) => write!(
                 f,

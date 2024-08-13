@@ -93,7 +93,7 @@ async fn test_status_rpc() {
 
     // get sender/receiver
     let (mut sender, mut receiver) = common::build_node_pair(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Phase0,
         Protocol::Tcp,
@@ -188,7 +188,7 @@ async fn test_blocks_by_range_chunked_rpc() {
 
     // get sender/receiver
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Bellatrix,
         Protocol::Tcp,
@@ -206,7 +206,7 @@ async fn test_blocks_by_range_chunked_rpc() {
     let rpc_response_altair = Response::BlocksByRange(Some(Arc::new(signed_full_block)));
 
     let signed_full_block = bellatrix_block_small(&ForkContext::dummy::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         Phase::Bellatrix,
     ))
     .into();
@@ -316,7 +316,7 @@ async fn test_blobs_by_range_chunked_rpc() {
     let log = common::build_log(log_level, enable_logging);
 
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Deneb,
         Protocol::Tcp,
@@ -424,7 +424,7 @@ async fn test_blocks_by_range_over_limit() {
 
     let log = common::build_log(log_level, enable_logging);
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Bellatrix,
         Protocol::Tcp,
@@ -433,7 +433,7 @@ async fn test_blocks_by_range_over_limit() {
 
     // BlocksByRange Response
     let signed_full_block = bellatrix_block_large(&ForkContext::dummy::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         Phase::Bellatrix,
     ))
     .into();
@@ -510,7 +510,7 @@ async fn blocks_by_range_chunked_rpc_terminates_correctly() {
 
     // get sender/receiver
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Phase0,
         Protocol::Tcp,
@@ -632,7 +632,7 @@ async fn test_blocks_by_range_single_empty_rpc() {
 
     // get sender/receiver
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Phase0,
         Protocol::Tcp,
@@ -734,7 +734,7 @@ async fn test_blocks_by_root_chunked_rpc() {
 
     // get sender/receiver
     let (mut sender, mut receiver) = common::build_node_pair(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Bellatrix,
         Protocol::Tcp,
@@ -753,7 +753,7 @@ async fn test_blocks_by_root_chunked_rpc() {
     let rpc_response_altair = Response::BlocksByRoot(Some(Arc::new(signed_full_block)));
 
     let signed_full_block = bellatrix_block_small::<Mainnet>(&ForkContext::dummy::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         Phase::Bellatrix,
     ))
     .into();
@@ -862,7 +862,7 @@ async fn test_blocks_by_root_chunked_rpc_terminates_correctly() {
     // get sender/receiver
 
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Bellatrix,
         Protocol::Tcp,
@@ -981,7 +981,7 @@ async fn goodbye_test(log_level: Level, enable_logging: bool, protocol: Protocol
 
     // get sender/receiver
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &Config::mainnet().rapid_upgrade(),
+        &Config::mainnet().rapid_upgrade().into(),
         &log,
         Phase::Phase0,
         protocol,

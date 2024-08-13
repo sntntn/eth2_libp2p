@@ -43,6 +43,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc;
+use types::config::Config as ChainConfig;
 
 use crate::types::EnrForkId;
 
@@ -155,6 +156,8 @@ enum EventStream {
 /// The main discovery service. This can be disabled via CLI arguements. When disabled the
 /// underlying processes are not started, but this struct still maintains our current ENR.
 pub struct Discovery {
+    chain_config: Arc<ChainConfig>,
+
     /// A collection of seen live ENRs for quick lookup and to map peer-id's to ENRs.
     cached_enrs: LruCache<PeerId, Enr>,
 
@@ -197,6 +200,7 @@ pub struct Discovery {
 impl Discovery {
     /// NOTE: Creating discovery requires running within a tokio execution environment.
     pub async fn new(
+        chain_config: Arc<ChainConfig>,
         local_key: Keypair,
         config: &NetworkConfig,
         network_globals: Arc<NetworkGlobals>,
@@ -318,6 +322,7 @@ impl Discovery {
         };
 
         Ok(Self {
+            chain_config,
             cached_enrs: LruCache::new(
                 ENR_CACHE_CAPACITY.expect("cached_enrs cache size cannot be zero"),
             ),
@@ -536,6 +541,8 @@ impl Discovery {
                     .enr_insert(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &bitfield_ssz.as_slice())
                     .map_err(|e| anyhow!("{:?}", e))?;
             }
+            // Data column subnets are computed from node ID. No subnet bitfield in the ENR.
+            Subnet::DataColumn(_) => return Ok(()),
         }
 
         // replace the global version
@@ -748,7 +755,8 @@ impl Discovery {
         // Only start a discovery query if we have a subnet to look for.
         if !filtered_subnet_queries.is_empty() {
             // build the subnet predicate as a combination of the eth2_fork_predicate and the subnet predicate
-            let subnet_predicate = subnet_predicate(filtered_subnets, &self.log);
+            let subnet_predicate =
+                subnet_predicate(self.chain_config.clone(), filtered_subnets, &self.log);
 
             debug!(
                 self.log,
@@ -862,6 +870,7 @@ impl Discovery {
                             let query_str = match query.subnet {
                                 Subnet::Attestation(_) => "attestation",
                                 Subnet::SyncCommittee(_) => "sync_committee",
+                                Subnet::DataColumn(_) => "data_column",
                             };
 
                             if let Some(v) = crate::common::metrics::get_int_counter(
@@ -874,7 +883,11 @@ impl Discovery {
                             self.add_subnet_query(query.subnet, query.min_ttl, query.retries + 1);
 
                             // Check the specific subnet against the enr
-                            let subnet_predicate = subnet_predicate(vec![query.subnet], &self.log);
+                            let subnet_predicate = subnet_predicate(
+                                self.chain_config.clone(),
+                                vec![query.subnet],
+                                &self.log,
+                            );
 
                             r.clone()
                                 .into_iter()
@@ -1188,6 +1201,7 @@ mod tests {
     }
 
     async fn build_discovery() -> Discovery {
+        let chain_config = Arc::new(ChainConfig::mainnet());
         let keypair = secp256k1::Keypair::generate();
         let mut config = NetworkConfig::default();
         config.set_listening_addr(crate::ListenAddress::unused_v4_ports());
@@ -1207,7 +1221,7 @@ mod tests {
             &log,
         );
         let keypair = keypair.into();
-        Discovery::new(keypair, &config, Arc::new(globals), &log)
+        Discovery::new(chain_config, keypair, &config, Arc::new(globals), &log)
             .await
             .unwrap()
     }

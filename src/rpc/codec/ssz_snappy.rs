@@ -1023,7 +1023,7 @@ mod tests {
 
     /// Encodes the given protocol response as bytes.
     fn encode_response<P: Preset>(
-        config: &Config,
+        config: &Arc<Config>,
         protocol: SupportedProtocol,
         message: RPCCodedResponse<P>,
         fork_name: Phase,
@@ -1041,7 +1041,7 @@ mod tests {
     }
 
     fn encode_without_length_checks<P: Preset>(
-        config: &Config,
+        config: &Arc<Config>,
         bytes: Vec<u8>,
         fork_name: Phase,
     ) -> Result<BytesMut, RPCError> {
@@ -1071,7 +1071,7 @@ mod tests {
 
     /// Attempts to decode the given protocol bytes as an rpc response
     fn decode_response<P: Preset>(
-        config: &Config,
+        config: &Arc<Config>,
         protocol: SupportedProtocol,
         message: &mut BytesMut,
         fork_name: Phase,
@@ -1088,7 +1088,7 @@ mod tests {
 
     /// Encodes the provided protocol message as bytes and tries to decode the encoding bytes.
     fn encode_then_decode_response<P: Preset>(
-        config: &Config,
+        config: &Arc<Config>,
         protocol: SupportedProtocol,
         message: RPCCodedResponse<P>,
         fork_name: Phase,
@@ -1099,7 +1099,7 @@ mod tests {
 
     /// Verifies that requests we send are encoded in a way that we would correctly decode too.
     fn encode_then_decode_request<P: Preset>(
-        config: &Config,
+        config: &Arc<Config>,
         req: OutboundRequest<P>,
         fork_name: Phase,
     ) {
@@ -1159,7 +1159,7 @@ mod tests {
     // Test RPCResponse encoding/decoding for V1 messages
     #[test]
     fn test_encode_then_decode_v1() {
-        let config = Config::mainnet().rapid_upgrade();
+        let config = Arc::new(Config::mainnet().rapid_upgrade());
 
         assert_eq!(
             encode_then_decode_response::<Mainnet>(
@@ -1278,7 +1278,7 @@ mod tests {
     // Test RPCResponse encoding/decoding for V1 messages
     #[test]
     fn test_encode_then_decode_v2() {
-        let config = Config::mainnet().rapid_upgrade();
+        let config = Arc::new(Config::mainnet().rapid_upgrade());
 
         assert_eq!(
             encode_then_decode_response::<Mainnet>(
@@ -1428,7 +1428,7 @@ mod tests {
     // Test RPCResponse encoding/decoding for V2 messages
     #[test]
     fn test_context_bytes_v2() {
-        let config = Config::mainnet().rapid_upgrade();
+        let config = Arc::new(Config::mainnet().rapid_upgrade());
 
         let fork_context = ForkContext::dummy::<Mainnet>(&config, Phase::Altair);
 
@@ -1616,7 +1616,7 @@ mod tests {
 
     #[test]
     fn test_encode_then_decode_request() {
-        let config = Config::mainnet().rapid_upgrade();
+        let config = Arc::new(Config::mainnet().rapid_upgrade());
 
         let requests: &[OutboundRequest<Mainnet>] = &[
             OutboundRequest::Ping(ping_message()),
@@ -1691,7 +1691,7 @@ mod tests {
         // 10 (for stream identifier) + 80 + 42 = 132 > `max_compressed_len`. Hence, decoding should fail with `InvalidData`.
         assert!(matches!(
             decode_response::<Mainnet>(
-                &Config::mainnet().rapid_upgrade(),
+                &Config::mainnet().rapid_upgrade().into(),
                 SupportedProtocol::StatusV1,
                 &mut dst,
                 Phase::Phase0,
@@ -1705,7 +1705,7 @@ mod tests {
     /// sends a valid message filled with a stream of useless padding before the actual message.
     #[test]
     fn test_decode_malicious_v2_message() {
-        let config = Config::mainnet().rapid_upgrade();
+        let config = Arc::new(Config::mainnet().rapid_upgrade());
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(&config, Phase::Altair));
 
         // 10 byte snappy stream identifier
@@ -1807,7 +1807,7 @@ mod tests {
 
         assert!(matches!(
             decode_response::<Mainnet>(
-                &Config::mainnet().rapid_upgrade(),
+                &Config::mainnet().rapid_upgrade().into(),
                 SupportedProtocol::StatusV1,
                 &mut dst,
                 Phase::Phase0,

@@ -59,7 +59,7 @@ pub fn build_config(mut boot_nodes: Vec<Enr>) -> NetworkConfig {
 }
 
 pub async fn build_libp2p_instance<P: Preset>(
-    chain_config: &ChainConfig,
+    chain_config: &Arc<ChainConfig>,
     boot_nodes: Vec<Enr>,
     log: slog::Logger,
     fork_name: Phase,
@@ -77,7 +77,7 @@ pub async fn build_libp2p_instance<P: Preset>(
     };
 
     Libp2pInstance(
-        LibP2PService::new(chain_config, executor, libp2p_context, &log)
+        LibP2PService::new(chain_config.clone(), executor, libp2p_context, &log)
             .await
             .expect("should build libp2p instance")
             .0,
@@ -99,7 +99,7 @@ pub enum Protocol {
 // This returns a (sender, receiver) pair.
 #[allow(dead_code)]
 pub async fn build_node_pair<P: Preset>(
-    chain_config: &ChainConfig,
+    chain_config: &Arc<ChainConfig>,
     log: &slog::Logger,
     fork_name: Phase,
     protocol: Protocol,
@@ -174,7 +174,7 @@ pub async fn build_node_pair<P: Preset>(
 // Returns `n` peers in a linear topology
 #[allow(dead_code)]
 pub async fn build_linear<P: Preset>(
-    chain_config: &ChainConfig,
+    chain_config: &Arc<ChainConfig>,
     log: slog::Logger,
     n: usize,
     fork_name: Phase,

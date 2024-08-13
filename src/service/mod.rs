@@ -143,7 +143,7 @@ pub struct Network<AppReqId: ReqId, P: Preset> {
 /// Implements the combined behaviour for the libp2p service.
 impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
     pub async fn new(
-        chain_config: &ChainConfig,
+        chain_config: Arc<ChainConfig>,
         executor: task_executor::TaskExecutor,
         mut ctx: ServiceContext<'_>,
         log: &slog::Logger,
@@ -208,7 +208,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 .get(),
         );
 
-        let score_settings = PeerScoreSettings::new(chain_config, gs_config.mesh_n());
+        let score_settings = PeerScoreSettings::new(&chain_config, gs_config.mesh_n());
 
         let gossip_cache = {
             let slot_duration = std::time::Duration::from_secs(chain_config.seconds_per_slot.get());
@@ -338,6 +338,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         let discovery = {
             // Build and start the discovery sub-behaviour
             let mut discovery = Discovery::new(
+                chain_config,
                 local_keypair.clone(),
                 &config,
                 network_globals.clone(),
@@ -1042,6 +1043,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             return;
         }
 
+        let chain_config = self.fork_context.chain_config().clone();
         let filtered: Vec<SubnetDiscovery> = subnets_to_discover
             .into_iter()
             .filter(|s| {
@@ -1077,7 +1079,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 // If we connect to the cached peers before the discovery query starts, then we potentially
                 // save a costly discovery query.
                 } else {
-                    self.dial_cached_enrs_in_subnet(s.subnet);
+                    self.dial_cached_enrs_in_subnet(chain_config.clone(), s.subnet);
                     true
                 }
             })
@@ -1246,8 +1248,8 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
 
     /// Dial cached Enrs in discovery service that are in the given `subnet_id` and aren't
     /// in Connected, Dialing or Banned state.
-    fn dial_cached_enrs_in_subnet(&mut self, subnet: Subnet) {
-        let predicate = subnet_predicate(vec![subnet], &self.log);
+    fn dial_cached_enrs_in_subnet(&mut self, chain_config: Arc<ChainConfig>, subnet: Subnet) {
+        let predicate = subnet_predicate(chain_config, vec![subnet], &self.log);
         let peers_to_dial: Vec<Enr> = self
             .discovery()
             .cached_enrs()
