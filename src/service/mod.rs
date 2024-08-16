@@ -168,6 +168,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         let network_globals = {
             // Create an ENR or load from disk if appropriate
             let enr = crate::discovery::enr::build_or_load_enr::<P>(
+                &chain_config,
                 local_keypair.clone(),
                 &config,
                 &ctx.enr_fork_id,

@@ -1217,7 +1217,7 @@ mod tests {
         let mut config = NetworkConfig::default();
         config.set_listening_addr(crate::ListenAddress::unused_v4_ports());
         let enr_key: CombinedKey = CombinedKey::from_secp256k1(&keypair);
-        let enr: Enr = build_enr(&enr_key, &config, &EnrForkId::default()).unwrap();
+        let enr: Enr = build_enr(&chain_config, &enr_key, &config, &EnrForkId::default()).unwrap();
         let log = build_log(slog::Level::Debug, false);
         let globals = NetworkGlobals::new(
             enr,
