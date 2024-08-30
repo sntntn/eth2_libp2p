@@ -141,6 +141,9 @@ pub struct Config {
 
     /// Configuration for the inbound rate limiter (requests received by this node).
     pub inbound_rate_limiter_config: Option<InboundRateLimiterConfig>,
+
+    /// Libp2p Private key file.
+    pub libp2p_private_key_file: Option<PathBuf>,
 }
 
 impl Config {
@@ -352,6 +355,7 @@ impl Default for Config {
             outbound_rate_limiter_config: None,
             invalid_block_storage: None,
             inbound_rate_limiter_config: None,
+            libp2p_private_key_file: None,
         }
     }
 }

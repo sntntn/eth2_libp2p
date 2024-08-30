@@ -110,9 +110,17 @@ fn keypair_from_bytes(mut bytes: Vec<u8>) -> Result<Keypair> {
 ///
 /// Currently only secp256k1 keys are allowed, as these are the only keys supported by discv5.
 pub fn load_private_key(config: &NetworkConfig, log: &slog::Logger) -> Keypair {
-    // check for key from disk
+    let mut network_key_f = None;
+
     if let Some(network_dir) = config.network_dir.as_ref() {
-        let network_key_f = network_dir.join(NETWORK_KEY_FILENAME);
+        network_key_f = Some(network_dir.join(NETWORK_KEY_FILENAME));
+    }
+
+    if let Some(libp2p_private_key_file_path) = config.libp2p_private_key_file.as_ref() {
+        network_key_f = Some(libp2p_private_key_file_path.clone());
+    }
+
+    if let Some(network_key_f) = network_key_f.as_ref() {
         if let Ok(mut network_key_file) = File::open(network_key_f.clone()) {
             let mut key_bytes: Vec<u8> = Vec::with_capacity(36);
             match network_key_file.read_to_end(&mut key_bytes) {
