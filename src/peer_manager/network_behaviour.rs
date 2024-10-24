@@ -239,10 +239,6 @@ impl PeerManager {
             "connection" => ?endpoint.to_endpoint()
         );
 
-        if other_established == 0 {
-            self.events.push(PeerManagerEvent::MetaData(peer_id));
-        }
-
         // Update the prometheus metrics
         if self.metrics_enabled {
             metrics::inc_counter(&metrics::PEER_CONNECT_EVENT_COUNT);
@@ -264,6 +260,10 @@ impl PeerManager {
             // Gracefully disconnect the peer.
             self.disconnect_peer(peer_id, GoodbyeReason::TooManyPeers);
             return;
+        }
+
+        if other_established == 0 {
+            self.events.push(PeerManagerEvent::MetaData(peer_id));
         }
 
         // NOTE: We don't register peers that we are disconnecting immediately. The network service
