@@ -1650,7 +1650,11 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         event: identify::Event,
     ) -> Option<NetworkEvent<AppReqId, P>> {
         match event {
-            identify::Event::Received { peer_id, mut info } => {
+            identify::Event::Received {
+                peer_id,
+                mut info,
+                connection_id: _,
+            } => {
                 if info.listen_addrs.len() > MAX_IDENTIFY_ADDRESSES {
                     debug!(
                         self.log,
