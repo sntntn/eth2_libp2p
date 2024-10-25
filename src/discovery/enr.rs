@@ -7,6 +7,7 @@ use super::ENR_FILENAME;
 use crate::types::{Enr, EnrAttestationBitfield, EnrForkId, EnrSyncCommitteeBitfield};
 use crate::NetworkConfig;
 use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use libp2p::identity::Keypair;
 use slog::{debug, warn};
 use ssz::{SszReadDefault as _, SszWrite as _};
@@ -44,19 +45,21 @@ pub trait Eth2Enr {
 impl Eth2Enr for Enr {
     fn attestation_bitfield(&self) -> Result<EnrAttestationBitfield, &'static str> {
         let bitfield_bytes = self
-            .get(ATTESTATION_BITFIELD_ENR_KEY)
-            .ok_or("ENR attestation bitfield non-existent")?;
+            .get_decodable::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY)
+            .ok_or("ENR attestation bitfield non-existent")?
+            .map_err(|_| "Invalid RLP Encoding")?;
 
-        EnrAttestationBitfield::from_ssz_default(bitfield_bytes)
+        EnrAttestationBitfield::from_ssz_default(&bitfield_bytes)
             .map_err(|_| "Could not decode the ENR attnets bitfield")
     }
 
     fn sync_committee_bitfield(&self) -> Result<EnrSyncCommitteeBitfield, &'static str> {
         let bitfield_bytes = self
-            .get(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
-            .ok_or("ENR sync committee bitfield non-existent")?;
+            .get_decodable::<Bytes>(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
+            .ok_or("ENR sync committee bitfield non-existent")?
+            .map_err(|_| "Invalid RLP Encoding")?;
 
-        EnrSyncCommitteeBitfield::from_ssz_default(bitfield_bytes)
+        EnrSyncCommitteeBitfield::from_ssz_default(&bitfield_bytes)
             .map_err(|_| "Could not decode the ENR syncnets bitfield")
     }
 
@@ -71,9 +74,12 @@ impl Eth2Enr for Enr {
     }
 
     fn eth2(&self) -> Result<EnrForkId, &'static str> {
-        let eth2_bytes = self.get(ETH2_ENR_KEY).ok_or("ENR has no eth2 field")?;
+        let eth2_bytes = self
+            .get_decodable::<Bytes>(ETH2_ENR_KEY)
+            .ok_or("ENR has no eth2 field")?
+            .map_err(|_| "Invalid RLP Encoding")?;
 
-        EnrForkId::from_ssz_default(eth2_bytes).map_err(|_| "Could not decode EnrForkId")
+        EnrForkId::from_ssz_default(&eth2_bytes).map_err(|_| "Could not decode EnrForkId")
     }
 }
 
@@ -274,16 +280,16 @@ fn compare_enr(local_enr: &Enr, disk_enr: &Enr) -> bool {
         && local_enr.quic4() == disk_enr.quic4()
         && local_enr.quic6() == disk_enr.quic6()
         // must match on the same fork
-        && local_enr.get(ETH2_ENR_KEY) == disk_enr.get(ETH2_ENR_KEY)
+        && local_enr.get_decodable::<Vec<u8>>(ETH2_ENR_KEY) == disk_enr.get_decodable(ETH2_ENR_KEY)
         // take preference over disk udp port if one is not specified
         && (local_enr.udp4().is_none() || local_enr.udp4() == disk_enr.udp4())
         && (local_enr.udp6().is_none() || local_enr.udp6() == disk_enr.udp6())
         // we need the ATTESTATION_BITFIELD_ENR_KEY and SYNC_COMMITTEE_BITFIELD_ENR_KEY and
         // PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY key to match, otherwise we use a new ENR. This will
         // likely only be true for non-validating nodes.
-        && local_enr.get(ATTESTATION_BITFIELD_ENR_KEY) == disk_enr.get(ATTESTATION_BITFIELD_ENR_KEY)
-        && local_enr.get(SYNC_COMMITTEE_BITFIELD_ENR_KEY) == disk_enr.get(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
-        && local_enr.get(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY) == disk_enr.get(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY)
+        && local_enr.get_decodable::<Vec<u8>>(ATTESTATION_BITFIELD_ENR_KEY) == disk_enr.get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
+        && local_enr.get_decodable::<Vec<u8>>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) == disk_enr.get_decodable(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
+        && local_enr.get_decodable::<Vec<u8>>(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY) == disk_enr.get_decodable(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY)
 }
 
 /// Loads enr from the given directory
