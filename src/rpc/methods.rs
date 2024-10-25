@@ -95,7 +95,7 @@ pub struct StatusMessage {
 }
 
 /// The PING request/response message.
-#[derive(Clone, Debug, PartialEq, Ssz)]
+#[derive(Copy, Clone, Debug, PartialEq, Ssz)]
 #[ssz(derive_hash = false, transparent)]
 pub struct Ping {
     /// The metadata sequence number.
