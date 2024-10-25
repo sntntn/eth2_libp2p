@@ -48,6 +48,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use std_ext::ArcExt as _;
 
 use types::{
     altair::consts::SyncCommitteeSubnetCount,
@@ -181,12 +182,14 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             // Construct the metadata
             let meta_data = utils::load_or_build_metadata(config.network_dir.as_deref(), &log);
             let globals = NetworkGlobals::new(
+                chain_config.clone_arc(),
                 enr,
                 meta_data,
                 trusted_peers,
                 config.disable_peer_scoring,
                 config.target_subnet_peers,
                 &log,
+                config.clone_arc(),
             );
             Arc::new(globals)
         };

@@ -1198,6 +1198,7 @@ mod tests {
     };
     use libp2p::identity::secp256k1;
     use slog::{o, Drain};
+    use std_ext::ArcExt as _;
 
     pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
         let decorator = slog_term::TermDecorator::new().build();
@@ -1216,10 +1217,12 @@ mod tests {
         let keypair = secp256k1::Keypair::generate();
         let mut config = NetworkConfig::default();
         config.set_listening_addr(crate::ListenAddress::unused_v4_ports());
+        let config = Arc::new(config);
         let enr_key: CombinedKey = CombinedKey::from_secp256k1(&keypair);
         let enr: Enr = build_enr(&chain_config, &enr_key, &config, &EnrForkId::default()).unwrap();
         let log = build_log(slog::Level::Debug, false);
         let globals = NetworkGlobals::new(
+            chain_config.clone_arc(),
             enr,
             MetaData::V2(MetaDataV2 {
                 seq_number: 0,
@@ -1230,6 +1233,7 @@ mod tests {
             false,
             3,
             &log,
+            config.clone_arc(),
         );
         let keypair = keypair.into();
         Discovery::new(chain_config, keypair, &config, Arc::new(globals), &log)

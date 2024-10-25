@@ -246,10 +246,7 @@ pub fn build_enr(
     // set the "syncnets" field on our ENR
     let bitfield = EnrSyncCommitteeBitfield::default();
 
-    builder.add_value::<Bytes>(
-        SYNC_COMMITTEE_BITFIELD_ENR_KEY,
-        &bitfield.to_ssz()?.into(),
-    );
+    builder.add_value::<Bytes>(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &bitfield.to_ssz()?.into());
 
     // only set `csc` if PeerDAS fork epoch has been scheduled
     if chain_config.is_eip7594_fork_epoch_set() {

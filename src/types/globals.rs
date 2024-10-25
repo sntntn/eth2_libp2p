@@ -2,13 +2,15 @@
 use crate::peer_manager::peerdb::PeerDB;
 use crate::rpc::{MetaData, MetaDataV2};
 use crate::types::{BackFillState, SyncState};
-use crate::Client;
-use crate::EnrExt;
-use crate::{Enr, GossipTopic, Multiaddr, PeerId};
+use crate::{Client, Enr, EnrExt, GossipTopic, Multiaddr, NetworkConfig, PeerId};
 use parking_lot::RwLock;
 use std::collections::HashSet;
+use std::sync::Arc;
+use types::config::Config as ChainConfig;
 
 pub struct NetworkGlobals {
+    /// Ethereum chain configuration. Immutable after initialization.
+    pub config: Arc<ChainConfig>,
     /// The current local ENR.
     pub local_enr: RwLock<Enr>,
     /// The local peer_id.
@@ -27,18 +29,23 @@ pub struct NetworkGlobals {
     pub backfill_state: RwLock<BackFillState>,
     /// Target subnet peers.
     pub target_subnet_peers: usize,
+    /// Network-related configuration. Immutable after initialization.
+    pub network_config: Arc<NetworkConfig>,
 }
 
 impl NetworkGlobals {
     pub fn new(
+        config: Arc<ChainConfig>,
         enr: Enr,
         local_metadata: MetaData,
         trusted_peers: Vec<PeerId>,
         disable_peer_scoring: bool,
         target_subnet_peers: usize,
         log: &slog::Logger,
+        network_config: Arc<NetworkConfig>,
     ) -> Self {
         NetworkGlobals {
+            config,
             local_enr: RwLock::new(enr.clone()),
             peer_id: RwLock::new(enr.peer_id()),
             listen_multiaddrs: RwLock::new(Vec::new()),
@@ -48,6 +55,7 @@ impl NetworkGlobals {
             sync_state: RwLock::new(SyncState::Stalled),
             backfill_state: RwLock::new(BackFillState::NotRequired),
             target_subnet_peers,
+            network_config,
         }
     }
 
@@ -119,22 +127,47 @@ impl NetworkGlobals {
     }
 
     /// TESTING ONLY. Build a dummy NetworkGlobals instance.
-    pub fn new_test_globals(trusted_peers: Vec<PeerId>, log: &slog::Logger) -> NetworkGlobals {
+    pub fn new_test_globals(
+        chain_config: Arc<ChainConfig>,
+        trusted_peers: Vec<PeerId>,
+        log: &slog::Logger,
+        network_config: Arc<NetworkConfig>,
+    ) -> NetworkGlobals {
+        let metadata = MetaData::V2(MetaDataV2 {
+            seq_number: 0,
+            attnets: Default::default(),
+            syncnets: Default::default(),
+        });
+
+        Self::new_test_globals_with_metadata(
+            chain_config,
+            trusted_peers,
+            metadata,
+            log,
+            network_config,
+        )
+    }
+
+    pub(crate) fn new_test_globals_with_metadata(
+        chain_config: Arc<ChainConfig>,
+        trusted_peers: Vec<PeerId>,
+        metadata: MetaData,
+        log: &slog::Logger,
+        network_config: Arc<NetworkConfig>,
+    ) -> NetworkGlobals {
         use crate::CombinedKeyExt;
         let keypair = libp2p::identity::secp256k1::Keypair::generate();
         let enr_key: discv5::enr::CombinedKey = discv5::enr::CombinedKey::from_secp256k1(&keypair);
         let enr = discv5::enr::Enr::builder().build(&enr_key).unwrap();
         NetworkGlobals::new(
+            chain_config,
             enr,
-            MetaData::V2(MetaDataV2 {
-                seq_number: 0,
-                attnets: Default::default(),
-                syncnets: Default::default(),
-            }),
+            metadata,
             trusted_peers,
             false,
             3,
             log,
+            network_config,
         )
     }
 }

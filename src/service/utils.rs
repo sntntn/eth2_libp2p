@@ -21,7 +21,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use types::phase0::primitives::ForkDigest;
+use types::{config::Config as ChainConfig, phase0::primitives::ForkDigest};
 
 pub const NETWORK_KEY_FILENAME: &str = "key";
 /// The maximum simultaneous libp2p connections per peer.
@@ -30,7 +30,8 @@ pub const MAX_CONNECTIONS_PER_PEER: u32 = 1;
 pub const METADATA_FILENAME: &str = "metadata";
 
 pub struct Context<'a> {
-    pub config: &'a NetworkConfig,
+    pub chain_config: Arc<ChainConfig>,
+    pub config: Arc<NetworkConfig>,
     pub enr_fork_id: EnrForkId,
     pub fork_context: Arc<ForkContext>,
     pub libp2p_registry: Option<&'a mut Registry>,

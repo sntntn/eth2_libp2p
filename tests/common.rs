@@ -7,6 +7,7 @@ use eth2_libp2p::{Context, Enr, EnrExt};
 use eth2_libp2p::{NetworkConfig, NetworkEvent};
 use slog::{debug, error, o, Drain};
 use std::sync::Arc;
+use std_ext::ArcExt as _;
 use types::{config::Config as ChainConfig, nonstandard::Phase, preset::Preset};
 
 type ReqId = usize;
@@ -39,7 +40,7 @@ pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
     }
 }
 
-pub fn build_config(mut boot_nodes: Vec<Enr>) -> NetworkConfig {
+pub fn build_config(mut boot_nodes: Vec<Enr>) -> Arc<NetworkConfig> {
     let mut config = NetworkConfig::default();
 
     // Find unused ports by using the 0 port.
@@ -55,7 +56,7 @@ pub fn build_config(mut boot_nodes: Vec<Enr>) -> NetworkConfig {
     config.enr_address = (Some(std::net::Ipv4Addr::LOCALHOST), None);
     config.boot_nodes_enr.append(&mut boot_nodes);
     config.network_dir = Some(path.into_path());
-    config
+    Arc::new(config)
 }
 
 pub async fn build_libp2p_instance<P: Preset>(
@@ -70,7 +71,8 @@ pub async fn build_libp2p_instance<P: Preset>(
     let (shutdown_tx, _) = futures::channel::mpsc::channel(1);
     let executor = TaskExecutor::new(log.clone(), shutdown_tx);
     let libp2p_context = Context {
-        config: &config,
+        chain_config: chain_config.clone_arc(),
+        config,
         enr_fork_id: EnrForkId::default(),
         fork_context: Arc::new(ForkContext::dummy::<P>(chain_config, fork_name)),
         libp2p_registry: None,

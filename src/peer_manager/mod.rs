@@ -3,9 +3,7 @@
 use crate::common::time_cache::LRUTimeCache;
 use crate::discovery::enr_ext::EnrExt;
 use crate::rpc::{GoodbyeReason, MetaData, Protocol, RPCError, RPCResponseErrorCode};
-use crate::{metrics, Gossipsub};
-use crate::{NetworkGlobals, PeerId};
-use crate::{Subnet, SubnetDiscovery};
+use crate::{metrics, Gossipsub, NetworkGlobals, PeerId, Subnet, SubnetDiscovery};
 use anyhow::Result;
 use delay_map::HashSetDelay;
 use discv5::Enr;
@@ -1357,7 +1355,9 @@ enum ConnectingType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NetworkConfig;
     use slog::{o, Drain};
+    use types::config::Config as ChainConfig;
 
     pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
         let decorator = slog_term::TermDecorator::new().build();
@@ -1372,27 +1372,26 @@ mod tests {
     }
 
     async fn build_peer_manager(target_peer_count: usize) -> PeerManager {
-        let config = config::Config {
-            target_peer_count,
-            discovery_enabled: false,
-            ..Default::default()
-        };
-        let log = build_log(slog::Level::Debug, false);
-        let globals = NetworkGlobals::new_test_globals(vec![], &log);
-        PeerManager::new(config, Arc::new(globals), &log).unwrap()
+        build_peer_manager_with_trusted_peers(vec![], target_peer_count).await
     }
 
     async fn build_peer_manager_with_trusted_peers(
         trusted_peers: Vec<PeerId>,
         target_peer_count: usize,
     ) -> PeerManager {
+        let chain_config = Arc::new(ChainConfig::mainnet());
         let config = config::Config {
             target_peer_count,
             discovery_enabled: false,
             ..Default::default()
         };
+        let network_config = Arc::new(NetworkConfig {
+            target_peers: target_peer_count,
+            ..Default::default()
+        });
         let log = build_log(slog::Level::Debug, false);
-        let globals = NetworkGlobals::new_test_globals(trusted_peers, &log);
+        let globals =
+            NetworkGlobals::new_test_globals(chain_config, trusted_peers, &log, network_config);
         PeerManager::new(config, Arc::new(globals), &log).unwrap()
     }
 
