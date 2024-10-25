@@ -1,8 +1,8 @@
 #![cfg(test)]
 use common::Protocol;
-use eth2_libp2p::rpc::methods::*;
+use eth2_libp2p::rpc::{methods::*, RequestType};
 use eth2_libp2p::types::ForkContext;
-use eth2_libp2p::{rpc::max_rpc_size, NetworkEvent, ReportSource, Request, Response};
+use eth2_libp2p::{rpc::max_rpc_size, NetworkEvent, ReportSource, Response};
 use slog::{debug, warn, Level};
 use ssz::{ByteList, ContiguousList, SszReadDefault as _, SszWrite as _};
 use std::sync::Arc;
@@ -101,7 +101,7 @@ async fn test_status_rpc() {
     .await;
 
     // Dummy STATUS RPC message
-    let rpc_request = Request::Status(StatusMessage {
+    let rpc_request = RequestType::Status(StatusMessage {
         fork_digest: ForkDigest::zero(),
         finalized_root: H256::zero(),
         finalized_epoch: 1,
@@ -154,10 +154,10 @@ async fn test_status_rpc() {
                     id,
                     request,
                 } => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         debug!(log, "Receiver Received");
-                        receiver.send_response(peer_id, id, rpc_response.clone());
+                        receiver.send_response(peer_id, id, request.id, rpc_response.clone());
                     }
                 }
                 _ => {} // Ignore other events
@@ -196,7 +196,12 @@ async fn test_blocks_by_range_chunked_rpc() {
     .await;
 
     // BlocksByRange Request
-    let rpc_request = Request::BlocksByRange(BlocksByRangeRequest::new(0, messages_to_send));
+    let rpc_request =
+        RequestType::BlocksByRange(OldBlocksByRangeRequest::V2(OldBlocksByRangeRequestV2 {
+            start_slot: 0,
+            count: messages_to_send,
+            step: 1,
+        }));
 
     // BlocksByRange Response
     let signed_full_block = factory::full_phase0_signed_beacon_block().into();
@@ -268,7 +273,7 @@ async fn test_blocks_by_range_chunked_rpc() {
                     id,
                     request,
                 } => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         warn!(log, "Receiver got request");
                         for i in 0..messages_to_send {
@@ -282,10 +287,15 @@ async fn test_blocks_by_range_chunked_rpc() {
                                 rpc_response_merge_small.clone()
                             };
                             debug!(log, "Sending RPC response");
-                            receiver.send_response(peer_id, id, rpc_response.clone());
+                            receiver.send_response(peer_id, id, request.id, rpc_response.clone());
                         }
                         // send the stream termination
-                        receiver.send_response(peer_id, id, Response::BlocksByRange(None));
+                        receiver.send_response(
+                            peer_id,
+                            id,
+                            request.id,
+                            Response::BlocksByRange(None),
+                        );
                     }
                 }
                 _ => {} // Ignore other events
@@ -324,7 +334,7 @@ async fn test_blobs_by_range_chunked_rpc() {
     .await;
 
     // BlobsByRange Request
-    let rpc_request = Request::BlobsByRange(BlobsByRangeRequest {
+    let rpc_request = RequestType::BlobsByRange(BlobsByRangeRequest {
         start_slot: 0,
         count: slot_count,
     });
@@ -383,16 +393,21 @@ async fn test_blobs_by_range_chunked_rpc() {
                     id,
                     request,
                 } => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         warn!(log, "Receiver got request");
                         for _ in 0..messages_to_send {
                             // Send first third of responses as base blocks,
                             // second as altair and third as merge.
-                            receiver.send_response(peer_id, id, rpc_response.clone());
+                            receiver.send_response(peer_id, id, request.id, rpc_response.clone());
                         }
                         // send the stream termination
-                        receiver.send_response(peer_id, id, Response::BlobsByRange(None));
+                        receiver.send_response(
+                            peer_id,
+                            id,
+                            request.id,
+                            Response::BlobsByRange(None),
+                        );
                     }
                 }
                 _ => {} // Ignore other events
@@ -420,7 +435,12 @@ async fn test_blocks_by_range_over_limit() {
     let messages_to_send = 5;
 
     // BlocksByRange Request
-    let rpc_request = Request::BlocksByRange(BlocksByRangeRequest::new(0, messages_to_send));
+    let rpc_request =
+        RequestType::BlocksByRange(OldBlocksByRangeRequest::V1(OldBlocksByRangeRequestV1 {
+            start_slot: 0,
+            count: messages_to_send,
+            step: 1,
+        }));
 
     let log = common::build_log(log_level, enable_logging);
     let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
@@ -471,15 +491,20 @@ async fn test_blocks_by_range_over_limit() {
                     id,
                     request,
                 } => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         warn!(log, "Receiver got request");
                         for _ in 0..messages_to_send {
                             let rpc_response = rpc_response_merge_large.clone();
-                            receiver.send_response(peer_id, id, rpc_response.clone());
+                            receiver.send_response(peer_id, id, request.id, rpc_response.clone());
                         }
                         // send the stream termination
-                        receiver.send_response(peer_id, id, Response::BlocksByRange(None));
+                        receiver.send_response(
+                            peer_id,
+                            id,
+                            request.id,
+                            Response::BlocksByRange(None),
+                        );
                     }
                 }
                 _ => {} // Ignore other events
@@ -518,7 +543,12 @@ async fn blocks_by_range_chunked_rpc_terminates_correctly() {
     .await;
 
     // BlocksByRange Request
-    let rpc_request = Request::BlocksByRange(BlocksByRangeRequest::new(0, messages_to_send));
+    let rpc_request =
+        RequestType::BlocksByRange(OldBlocksByRangeRequest::V2(OldBlocksByRangeRequestV2 {
+            start_slot: 0,
+            count: messages_to_send,
+            step: 1,
+        }));
 
     // BlocksByRange Response
     let empty_signed = Phase0SignedBeaconBlock::default().into();
@@ -587,10 +617,10 @@ async fn blocks_by_range_chunked_rpc_terminates_correctly() {
                     },
                     _,
                 )) => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         warn!(log, "Receiver got request");
-                        message_info = Some((peer_id, id));
+                        message_info = Some((peer_id, id, request.id));
                     }
                 }
                 futures::future::Either::Right((_, _)) => {} // The timeout hit, send messages if required
@@ -600,8 +630,8 @@ async fn blocks_by_range_chunked_rpc_terminates_correctly() {
             // if we need to send messages send them here. This will happen after a delay
             if message_info.is_some() {
                 messages_sent += 1;
-                let (peer_id, stream_id) = message_info.as_ref().unwrap();
-                receiver.send_response(*peer_id, *stream_id, rpc_response.clone());
+                let (peer_id, stream_id, request_id) = message_info.as_ref().unwrap();
+                receiver.send_response(*peer_id, *stream_id, *request_id, rpc_response.clone());
                 debug!(log, "Sending message {}", messages_sent);
                 if messages_sent == messages_to_send + extra_messages_to_send {
                     // stop sending messages
@@ -640,7 +670,12 @@ async fn test_blocks_by_range_single_empty_rpc() {
     .await;
 
     // BlocksByRange Request
-    let rpc_request = Request::BlocksByRange(BlocksByRangeRequest::new(0, 10));
+    let rpc_request =
+        RequestType::BlocksByRange(OldBlocksByRangeRequest::V2(OldBlocksByRangeRequestV2 {
+            start_slot: 0,
+            count: 10,
+            step: 1,
+        }));
 
     // BlocksByRange Response
     let empty_signed = Phase0SignedBeaconBlock::default().into();
@@ -693,15 +728,20 @@ async fn test_blocks_by_range_single_empty_rpc() {
                     id,
                     request,
                 } => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         warn!(log, "Receiver got request");
 
                         for _ in 1..=messages_to_send {
-                            receiver.send_response(peer_id, id, rpc_response.clone());
+                            receiver.send_response(peer_id, id, request.id, rpc_response.clone());
                         }
                         // send the stream termination
-                        receiver.send_response(peer_id, id, Response::BlocksByRange(None));
+                        receiver.send_response(
+                            peer_id,
+                            id,
+                            request.id,
+                            Response::BlocksByRange(None),
+                        );
                     }
                 }
                 _ => {} // Ignore other events
@@ -742,7 +782,7 @@ async fn test_blocks_by_root_chunked_rpc() {
     .await;
 
     // BlocksByRoot Request
-    let rpc_request = Request::BlocksByRoot(BlocksByRootRequest::new(
+    let rpc_request = RequestType::BlocksByRoot(BlocksByRootRequest::new(
         vec![H256::zero(); 6].try_into().unwrap(),
     ));
     // BlocksByRoot Response
@@ -810,7 +850,7 @@ async fn test_blocks_by_root_chunked_rpc() {
                     id,
                     request,
                 } => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         debug!(log, "Receiver got request");
 
@@ -827,11 +867,16 @@ async fn test_blocks_by_root_chunked_rpc() {
                                 // debug!(log, "Sending merge block");
                                 rpc_response_merge_small.clone()
                             };
-                            receiver.send_response(peer_id, id, rpc_response);
+                            receiver.send_response(peer_id, id, request.id, rpc_response);
                             debug!(log, "Sending message");
                         }
                         // send the stream termination
-                        receiver.send_response(peer_id, id, Response::BlocksByRange(None));
+                        receiver.send_response(
+                            peer_id,
+                            id,
+                            request.id,
+                            Response::BlocksByRange(None),
+                        );
                         debug!(log, "Send stream term");
                     }
                 }
@@ -870,7 +915,7 @@ async fn test_blocks_by_root_chunked_rpc_terminates_correctly() {
     .await;
 
     // BlocksByRoot Request
-    let rpc_request = Request::BlocksByRoot(BlocksByRootRequest::new(
+    let rpc_request = RequestType::BlocksByRoot(BlocksByRootRequest::new(
         vec![H256::zero(); 10].try_into().unwrap(),
     ));
 
@@ -940,10 +985,10 @@ async fn test_blocks_by_root_chunked_rpc_terminates_correctly() {
                     },
                     _,
                 )) => {
-                    if request == rpc_request {
+                    if request.r#type == rpc_request {
                         // send the response
                         warn!(log, "Receiver got request");
-                        message_info = Some((peer_id, id));
+                        message_info = Some((peer_id, id, request.id));
                     }
                 }
                 futures::future::Either::Right((_, _)) => {} // The timeout hit, send messages if required
@@ -953,8 +998,8 @@ async fn test_blocks_by_root_chunked_rpc_terminates_correctly() {
             // if we need to send messages send them here. This will happen after a delay
             if message_info.is_some() {
                 messages_sent += 1;
-                let (peer_id, stream_id) = message_info.as_ref().unwrap();
-                receiver.send_response(*peer_id, *stream_id, rpc_response.clone());
+                let (peer_id, stream_id, request_id) = message_info.as_ref().unwrap();
+                receiver.send_response(*peer_id, *stream_id, *request_id, rpc_response.clone());
                 debug!(log, "Sending message {}", messages_sent);
                 if messages_sent == messages_to_send + extra_messages_to_send {
                     // stop sending messages

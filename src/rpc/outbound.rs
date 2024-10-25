@@ -1,7 +1,6 @@
-use super::methods::*;
 use super::protocol::ProtocolId;
-use super::protocol::SupportedProtocol;
 use super::RPCError;
+use super::RequestType;
 use crate::rpc::codec::SSZSnappyOutboundCodec;
 use crate::rpc::protocol::Encoding;
 use crate::types::ForkContext;
@@ -22,21 +21,9 @@ use types::preset::Preset;
 
 #[derive(Debug, Clone)]
 pub struct OutboundRequestContainer<P: Preset> {
-    pub req: OutboundRequest<P>,
+    pub req: RequestType<P>,
     pub fork_context: Arc<ForkContext>,
     pub max_rpc_size: usize,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OutboundRequest<P: Preset> {
-    Status(StatusMessage),
-    Goodbye(GoodbyeReason),
-    BlocksByRange(OldBlocksByRangeRequest),
-    BlocksByRoot(BlocksByRootRequest),
-    BlobsByRange(BlobsByRangeRequest),
-    BlobsByRoot(BlobsByRootRequest),
-    Ping(Ping),
-    MetaData(MetadataRequest<P>),
 }
 
 impl<P: Preset> UpgradeInfo for OutboundRequestContainer<P> {
@@ -46,115 +33,6 @@ impl<P: Preset> UpgradeInfo for OutboundRequestContainer<P> {
     // add further protocols as we support more encodings/versions
     fn protocol_info(&self) -> Self::InfoIter {
         self.req.supported_protocols()
-    }
-}
-
-/// Implements the encoding per supported protocol for `RPCRequest`.
-impl<P: Preset> OutboundRequest<P> {
-    pub fn supported_protocols(&self) -> Vec<ProtocolId> {
-        match self {
-            // add more protocols when versions/encodings are supported
-            OutboundRequest::Status(_) => vec![ProtocolId::new(
-                SupportedProtocol::StatusV1,
-                Encoding::SSZSnappy,
-            )],
-            OutboundRequest::Goodbye(_) => vec![ProtocolId::new(
-                SupportedProtocol::GoodbyeV1,
-                Encoding::SSZSnappy,
-            )],
-            OutboundRequest::BlocksByRange(_) => vec![
-                ProtocolId::new(SupportedProtocol::BlocksByRangeV2, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::BlocksByRangeV1, Encoding::SSZSnappy),
-            ],
-            OutboundRequest::BlocksByRoot(_) => vec![
-                ProtocolId::new(SupportedProtocol::BlocksByRootV2, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::BlocksByRootV1, Encoding::SSZSnappy),
-            ],
-            OutboundRequest::BlobsByRange(_) => vec![ProtocolId::new(
-                SupportedProtocol::BlobsByRangeV1,
-                Encoding::SSZSnappy,
-            )],
-            OutboundRequest::BlobsByRoot(_) => vec![ProtocolId::new(
-                SupportedProtocol::BlobsByRootV1,
-                Encoding::SSZSnappy,
-            )],
-            OutboundRequest::Ping(_) => vec![ProtocolId::new(
-                SupportedProtocol::PingV1,
-                Encoding::SSZSnappy,
-            )],
-            OutboundRequest::MetaData(_) => vec![
-                ProtocolId::new(SupportedProtocol::MetaDataV2, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::MetaDataV1, Encoding::SSZSnappy),
-            ],
-        }
-    }
-    /* These functions are used in the handler for stream management */
-
-    /// Maximum number of responses expected for this request.
-    pub fn max_responses(&self) -> u64 {
-        match self {
-            OutboundRequest::Status(_) => 1,
-            OutboundRequest::Goodbye(_) => 0,
-            OutboundRequest::BlocksByRange(req) => req.count(),
-            OutboundRequest::BlocksByRoot(req) => req.len() as u64,
-            OutboundRequest::BlobsByRange(req) => req.max_blobs_requested::<P>(),
-            OutboundRequest::BlobsByRoot(req) => req.blob_ids.len() as u64,
-            OutboundRequest::Ping(_) => 1,
-            OutboundRequest::MetaData(_) => 1,
-        }
-    }
-
-    pub fn expect_exactly_one_response(&self) -> bool {
-        match self {
-            OutboundRequest::Status(_) => true,
-            OutboundRequest::Goodbye(_) => false,
-            OutboundRequest::BlocksByRange(_) => false,
-            OutboundRequest::BlocksByRoot(_) => false,
-            OutboundRequest::BlobsByRange(_) => false,
-            OutboundRequest::BlobsByRoot(_) => false,
-            OutboundRequest::Ping(_) => true,
-            OutboundRequest::MetaData(_) => true,
-        }
-    }
-
-    /// Gives the corresponding `SupportedProtocol` to this request.
-    pub fn versioned_protocol(&self) -> SupportedProtocol {
-        match self {
-            OutboundRequest::Status(_) => SupportedProtocol::StatusV1,
-            OutboundRequest::Goodbye(_) => SupportedProtocol::GoodbyeV1,
-            OutboundRequest::BlocksByRange(req) => match req {
-                OldBlocksByRangeRequest::V1(_) => SupportedProtocol::BlocksByRangeV1,
-                OldBlocksByRangeRequest::V2(_) => SupportedProtocol::BlocksByRangeV2,
-            },
-            OutboundRequest::BlocksByRoot(req) => match req {
-                BlocksByRootRequest::V1(_) => SupportedProtocol::BlocksByRootV1,
-                BlocksByRootRequest::V2(_) => SupportedProtocol::BlocksByRootV2,
-            },
-            OutboundRequest::BlobsByRange(_) => SupportedProtocol::BlobsByRangeV1,
-            OutboundRequest::BlobsByRoot(_) => SupportedProtocol::BlobsByRootV1,
-            OutboundRequest::Ping(_) => SupportedProtocol::PingV1,
-            OutboundRequest::MetaData(req) => match req {
-                MetadataRequest::V1(_) => SupportedProtocol::MetaDataV1,
-                MetadataRequest::V2(_) => SupportedProtocol::MetaDataV2,
-            },
-        }
-    }
-
-    /// Returns the `ResponseTermination` type associated with the request if a stream gets
-    /// terminated.
-    pub fn stream_termination(&self) -> ResponseTermination {
-        match self {
-            // this only gets called after `multiple_responses()` returns true. Therefore, only
-            // variants that have `multiple_responses()` can have values.
-            OutboundRequest::BlocksByRange(_) => ResponseTermination::BlocksByRange,
-            OutboundRequest::BlocksByRoot(_) => ResponseTermination::BlocksByRoot,
-            OutboundRequest::BlobsByRange(_) => ResponseTermination::BlobsByRange,
-            OutboundRequest::BlobsByRoot(_) => ResponseTermination::BlobsByRoot,
-            OutboundRequest::Status(_) => unreachable!(),
-            OutboundRequest::Goodbye(_) => unreachable!(),
-            OutboundRequest::Ping(_) => unreachable!(),
-            OutboundRequest::MetaData(_) => unreachable!(),
-        }
     }
 }
 
@@ -190,20 +68,5 @@ where
             Ok(socket)
         }
         .boxed()
-    }
-}
-
-impl<P: Preset> std::fmt::Display for OutboundRequest<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OutboundRequest::Status(status) => write!(f, "Status Message: {}", status),
-            OutboundRequest::Goodbye(reason) => write!(f, "Goodbye: {}", reason),
-            OutboundRequest::BlocksByRange(req) => write!(f, "Blocks by range: {}", req),
-            OutboundRequest::BlocksByRoot(req) => write!(f, "Blocks by root: {:?}", req),
-            OutboundRequest::BlobsByRange(req) => write!(f, "Blobs by range: {:?}", req),
-            OutboundRequest::BlobsByRoot(req) => write!(f, "Blobs by root: {:?}", req),
-            OutboundRequest::Ping(ping) => write!(f, "Ping: {}", ping.data),
-            OutboundRequest::MetaData(_) => write!(f, "MetaData request"),
-        }
     }
 }

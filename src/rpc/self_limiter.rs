@@ -14,13 +14,13 @@ use types::preset::Preset;
 use super::{
     config::OutboundRateLimiterConfig,
     rate_limiter::{RPCRateLimiter as RateLimiter, RateLimitedErr},
-    BehaviourAction, OutboundRequest, Protocol, RPCSend, ReqId,
+    BehaviourAction, Protocol, RPCSend, ReqId, RequestType,
 };
 
 /// A request that was rate limited or waiting on rate limited requests for the same peer and
 /// protocol.
 struct QueuedRequest<Id: ReqId, P: Preset> {
-    req: OutboundRequest<P>,
+    req: RequestType<P>,
     request_id: Id,
 }
 
@@ -70,7 +70,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         &mut self,
         peer_id: PeerId,
         request_id: Id,
-        req: OutboundRequest<P>,
+        req: RequestType<P>,
     ) -> Result<BehaviourAction<Id, P>, Error> {
         let protocol = req.versioned_protocol().protocol();
         // First check that there are not already other requests waiting to be sent.
@@ -101,7 +101,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         limiter: &mut RateLimiter,
         peer_id: PeerId,
         request_id: Id,
-        req: OutboundRequest<P>,
+        req: RequestType<P>,
         log: &Logger,
     ) -> Result<BehaviourAction<Id, P>, (QueuedRequest<Id, P>, Duration)> {
         match limiter.allows(&peer_id, &req) {
@@ -211,7 +211,7 @@ mod tests {
     use crate::rpc::config::{OutboundRateLimiterConfig, RateLimiterConfig};
     use crate::rpc::rate_limiter::Quota;
     use crate::rpc::self_limiter::SelfRateLimiter;
-    use crate::rpc::{OutboundRequest, Ping, Protocol};
+    use crate::rpc::{Ping, Protocol, RequestType};
     use crate::service::api_types::RequestId;
     use libp2p::PeerId;
     use slog::{o, Drain};
@@ -246,7 +246,7 @@ mod tests {
             let _ = limiter.allows(
                 peer_id,
                 RequestId::Application(i),
-                OutboundRequest::Ping(Ping { data: i }),
+                RequestType::Ping(Ping { data: i as u64 }),
             );
         }
 
