@@ -15,6 +15,7 @@ pub use enr::{build_enr, load_enr_from_disk, use_or_load_enr, CombinedKey, Eth2E
 pub use enr_ext::{peer_id_to_node_id, CombinedKeyExt, EnrExt};
 pub use libp2p::identity::{Keypair, PublicKey};
 
+use alloy_rlp::bytes::Bytes;
 use anyhow::{anyhow, Error, Result};
 use enr::{ATTESTATION_BITFIELD_ENR_KEY, ETH2_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY};
 use futures::prelude::*;
@@ -515,7 +516,7 @@ impl Discovery {
                 // insert the bitfield into the ENR record
                 let bitfield_ssz = current_bitfield.to_ssz()?;
                 self.discv5
-                    .enr_insert(ATTESTATION_BITFIELD_ENR_KEY, &bitfield_ssz.as_slice())
+                    .enr_insert::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &bitfield_ssz.into())
                     .map_err(|e| anyhow!("{:?}", e))?;
             }
             Subnet::SyncCommittee(id) => {
@@ -539,7 +540,7 @@ impl Discovery {
                 // insert the bitfield into the ENR record
                 let bitfield_ssz = current_bitfield.to_ssz()?;
                 self.discv5
-                    .enr_insert(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &bitfield_ssz.as_slice())
+                    .enr_insert::<Bytes>(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &bitfield_ssz.into())
                     .map_err(|e| anyhow!("{:?}", e))?;
             }
             // Data column subnets are computed from node ID. No subnet bitfield in the ENR.
@@ -573,7 +574,7 @@ impl Discovery {
         let update = || {
             let ssz = enr_fork_id.to_ssz()?;
             self.discv5
-                .enr_insert(ETH2_ENR_KEY, &ssz.as_slice())
+                .enr_insert::<Bytes>(ETH2_ENR_KEY, &ssz.into())
                 .map_err(|error| anyhow!("{:?}", error))
         };
 
@@ -1288,7 +1289,7 @@ mod tests {
 
         let bitfield_ssz = bitfield.to_ssz().unwrap();
 
-        builder.add_value(ATTESTATION_BITFIELD_ENR_KEY, &bitfield_ssz.as_slice());
+        builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &bitfield_ssz.into());
         builder.build(&enr_key).unwrap()
     }
 

@@ -6,8 +6,8 @@ use super::enr_ext::CombinedKeyExt;
 use super::ENR_FILENAME;
 use crate::types::{Enr, EnrAttestationBitfield, EnrForkId, EnrSyncCommitteeBitfield};
 use crate::NetworkConfig;
+use alloy_rlp::bytes::Bytes;
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
 use libp2p::identity::Keypair;
 use slog::{debug, warn};
 use ssz::{SszReadDefault as _, SszWrite as _};
@@ -236,19 +236,19 @@ pub fn build_enr(
     }
 
     // set the `eth2` field on our ENR
-    builder.add_value(ETH2_ENR_KEY, &enr_fork_id.to_ssz()?.as_slice());
+    builder.add_value::<Bytes>(ETH2_ENR_KEY, &enr_fork_id.to_ssz()?.into());
 
     // set the "attnets" field on our ENR
     let bitfield = EnrAttestationBitfield::default();
 
-    builder.add_value(ATTESTATION_BITFIELD_ENR_KEY, &bitfield.to_ssz()?.as_slice());
+    builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &bitfield.to_ssz()?.into());
 
     // set the "syncnets" field on our ENR
     let bitfield = EnrSyncCommitteeBitfield::default();
 
-    builder.add_value(
+    builder.add_value::<Bytes>(
         SYNC_COMMITTEE_BITFIELD_ENR_KEY,
-        &bitfield.to_ssz()?.as_slice(),
+        &bitfield.to_ssz()?.into(),
     );
 
     // only set `csc` if PeerDAS fork epoch has been scheduled
@@ -280,16 +280,16 @@ fn compare_enr(local_enr: &Enr, disk_enr: &Enr) -> bool {
         && local_enr.quic4() == disk_enr.quic4()
         && local_enr.quic6() == disk_enr.quic6()
         // must match on the same fork
-        && local_enr.get_decodable::<Vec<u8>>(ETH2_ENR_KEY) == disk_enr.get_decodable(ETH2_ENR_KEY)
+        && local_enr.get_decodable::<Bytes>(ETH2_ENR_KEY) == disk_enr.get_decodable(ETH2_ENR_KEY)
         // take preference over disk udp port if one is not specified
         && (local_enr.udp4().is_none() || local_enr.udp4() == disk_enr.udp4())
         && (local_enr.udp6().is_none() || local_enr.udp6() == disk_enr.udp6())
         // we need the ATTESTATION_BITFIELD_ENR_KEY and SYNC_COMMITTEE_BITFIELD_ENR_KEY and
         // PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY key to match, otherwise we use a new ENR. This will
         // likely only be true for non-validating nodes.
-        && local_enr.get_decodable::<Vec<u8>>(ATTESTATION_BITFIELD_ENR_KEY) == disk_enr.get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
-        && local_enr.get_decodable::<Vec<u8>>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) == disk_enr.get_decodable(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
-        && local_enr.get_decodable::<Vec<u8>>(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY) == disk_enr.get_decodable(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY)
+        && local_enr.get_decodable::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY) == disk_enr.get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
+        && local_enr.get_decodable::<Bytes>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) == disk_enr.get_decodable(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
+        && local_enr.get_decodable::<Bytes>(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY) == disk_enr.get_decodable(PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY)
 }
 
 /// Loads enr from the given directory
@@ -336,6 +336,17 @@ mod test {
         let mut chain_config = ChainConfig::mainnet();
         chain_config.eip7594_fork_epoch = 10;
         chain_config
+    }
+
+    fn build_enr_with_config(
+        chain_config: &ChainConfig,
+        config: NetworkConfig,
+    ) -> (Enr, CombinedKey) {
+        let keypair = libp2p::identity::secp256k1::Keypair::generate();
+        let enr_key = CombinedKey::from_secp256k1(&keypair);
+        let enr_fork_id = EnrForkId::default();
+        let enr = build_enr(chain_config, &enr_key, &config, &enr_fork_id).unwrap();
+        (enr, enr_key)
     }
 
     #[test]
@@ -389,14 +400,24 @@ mod test {
         );
     }
 
-    fn build_enr_with_config(
-        chain_config: &ChainConfig,
-        config: NetworkConfig,
-    ) -> (Enr, CombinedKey) {
-        let keypair = libp2p::identity::secp256k1::Keypair::generate();
-        let enr_key = CombinedKey::from_secp256k1(&keypair);
-        let enr_fork_id = EnrForkId::default();
-        let enr = build_enr(chain_config, &enr_key, &config, &enr_fork_id).unwrap();
-        (enr, enr_key)
+    #[test]
+    fn test_encode_decode_eth2_enr() {
+        let config = NetworkConfig::default();
+        let chain_config = make_eip7594_config();
+        let (enr, _key) = build_enr_with_config(&chain_config, config);
+        // Check all Eth2 Mappings are decodeable
+        enr.eth2().unwrap();
+        enr.attestation_bitfield().unwrap();
+        enr.sync_committee_bitfield().unwrap();
+    }
+
+    #[test]
+    fn test_eth2_enr_encodings() {
+        let enr_str = "enr:-Mm4QEX9fFRi1n4H3M9sGIgFQ6op1IysTU4Gz6tpIiOGRM1DbJtIih1KgGgv3Xl-oUlwco3HwdXsbYuXStBuNhUVIPoBh2F0dG5ldHOIAAAAAAAAAACDY3NjBIRldGgykI-3hTFgAAA4AOH1BQAAAACCaWSCdjSCaXCErBAADoRxdWljgiMpiXNlY3AyNTZrMaECph91xMyTVyE5MVj6lBpPgz6KP2--Kr9lPbo6_GjrfRKIc3luY25ldHMAg3RjcIIjKIN1ZHCCIyg";
+        //let my_enr_str = "enr:-Ma4QM2I1AxBU116QcMV2wKVrSr5Nsko90gMVkstZO4APysQCEwJJJeuTvODKmv7fDsLhVFjrlidVNhBOxSZ8sZPbCWCCcqHYXR0bmV0c4gAAAAAAAAMAIRldGgykGqVoakEAAAA__________-CaWSCdjSCaXCEJq-HPYRxdWljgiMziXNlY3AyNTZrMaECMPAnmmHQpD1k6DuOxWVoFXBoTYY6Wuv9BP4lxauAlmiIc3luY25ldHMAg3RjcIIjMoN1ZHCCIzI";
+        let enr = Enr::from_str(enr_str).unwrap();
+        enr.eth2().unwrap();
+        enr.attestation_bitfield().unwrap();
+        enr.sync_committee_bitfield().unwrap();
     }
 }
