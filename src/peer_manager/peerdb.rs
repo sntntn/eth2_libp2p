@@ -1,7 +1,7 @@
 use crate::discovery::CombinedKey;
 use crate::{metrics, multiaddr::Multiaddr, types::Subnet, Enr, Gossipsub, PeerId};
+use itertools::Itertools as _;
 use peer_info::{ConnectionDirection, PeerConnectionStatus, PeerInfo};
-use rand::seq::SliceRandom;
 use score::{PeerAction, ReportSource, Score, ScoreState};
 use slog::{crit, debug, error, trace, warn};
 use std::net::IpAddr;
@@ -279,15 +279,11 @@ impl PeerDB {
     /// Returns a vector of all connected peers sorted by score beginning with the worst scores.
     /// Ties get broken randomly.
     pub fn worst_connected_peers(&self) -> Vec<(&PeerId, &PeerInfo)> {
-        let mut connected = self
-            .peers
+        self.peers
             .iter()
             .filter(|(_, info)| info.is_connected())
-            .collect::<Vec<_>>();
-
-        connected.shuffle(&mut rand::thread_rng());
-        connected.sort_by_key(|(_, info)| info.score());
-        connected
+            .sorted_by(|(_, info_a), (_, info_b)| info_a.score().total_cmp(info_b.score(), false))
+            .collect::<Vec<_>>()
     }
 
     /// Returns a vector containing peers (their ids and info), sorted by
@@ -296,13 +292,11 @@ impl PeerDB {
     where
         F: Fn(&PeerInfo) -> bool,
     {
-        let mut by_status = self
-            .peers
+        self.peers
             .iter()
             .filter(|(_, info)| is_status(info))
-            .collect::<Vec<_>>();
-        by_status.sort_by_key(|(_, info)| info.score());
-        by_status.into_iter().rev().collect()
+            .sorted_by(|(_, info_a), (_, info_b)| info_a.score().total_cmp(info_b.score(), true))
+            .collect::<Vec<_>>()
     }
 
     /// Returns the peer with highest reputation that satisfies `is_status`
@@ -313,7 +307,7 @@ impl PeerDB {
         self.peers
             .iter()
             .filter(|(_, info)| is_status(info))
-            .max_by_key(|(_, info)| info.score())
+            .max_by(|(_, info_a), (_, info_b)| info_a.score().total_cmp(info_b.score(), false))
             .map(|(id, _)| id)
     }
 
