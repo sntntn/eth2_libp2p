@@ -24,8 +24,6 @@ use std::time::Duration;
 use types::{config::Config as ChainConfig, phase0::primitives::ForkDigest};
 
 pub const NETWORK_KEY_FILENAME: &str = "key";
-/// The maximum simultaneous libp2p connections per peer.
-pub const MAX_CONNECTIONS_PER_PEER: u32 = 1;
 /// The filename to store our local metadata.
 pub const METADATA_FILENAME: &str = "metadata";
 
