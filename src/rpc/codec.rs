@@ -669,13 +669,15 @@ fn handle_rpc_response<P: Preset>(
             SignedBeaconBlock::Phase0(Phase0SignedBeaconBlock::from_ssz_default(decoded_buffer)?),
         )))),
         SupportedProtocol::BlobsByRangeV1 => match fork_name {
-            Some(Phase::Deneb) => Ok(Some(RpcSuccessResponse::BlobsByRange(Arc::new(
-                BlobSidecar::from_ssz_default(decoded_buffer)?,
-            )))),
-            Some(_) => Err(RPCError::ErrorResponse(
-                RpcErrorResponse::InvalidRequest,
-                "Invalid fork name for blobs by range".to_string(),
-            )),
+            Some(Phase::Deneb | Phase::Electra) => Ok(Some(RpcSuccessResponse::BlobsByRange(
+                Arc::new(BlobSidecar::from_ssz_default(decoded_buffer)?),
+            ))),
+            Some(Phase::Phase0 | Phase::Altair | Phase::Bellatrix | Phase::Capella) => {
+                Err(RPCError::ErrorResponse(
+                    RpcErrorResponse::InvalidRequest,
+                    "Invalid fork name for blobs by range".to_string(),
+                ))
+            }
             None => Err(RPCError::ErrorResponse(
                 RpcErrorResponse::InvalidRequest,
                 format!(
@@ -685,13 +687,15 @@ fn handle_rpc_response<P: Preset>(
             )),
         },
         SupportedProtocol::BlobsByRootV1 => match fork_name {
-            Some(Phase::Deneb) => Ok(Some(RpcSuccessResponse::BlobsByRoot(Arc::new(
-                BlobSidecar::from_ssz_default(decoded_buffer)?,
-            )))),
-            Some(_) => Err(RPCError::ErrorResponse(
-                RpcErrorResponse::InvalidRequest,
-                "Invalid fork name for blobs by root".to_string(),
-            )),
+            Some(Phase::Deneb | Phase::Electra) => Ok(Some(RpcSuccessResponse::BlobsByRoot(
+                Arc::new(BlobSidecar::from_ssz_default(decoded_buffer)?),
+            ))),
+            Some(Phase::Phase0 | Phase::Altair | Phase::Bellatrix | Phase::Capella) => {
+                Err(RPCError::ErrorResponse(
+                    RpcErrorResponse::InvalidRequest,
+                    "Invalid fork name for blobs by root".to_string(),
+                ))
+            }
             None => Err(RPCError::ErrorResponse(
                 RpcErrorResponse::InvalidRequest,
                 format!(
