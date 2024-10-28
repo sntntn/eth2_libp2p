@@ -19,6 +19,7 @@ pub const DEFAULT_IPV4_ADDRESS: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 pub const DEFAULT_TCP_PORT: u16 = 9000u16;
 pub const DEFAULT_DISC_PORT: u16 = 9000u16;
 pub const DEFAULT_QUIC_PORT: u16 = 9001u16;
+pub const DEFAULT_IDONTWANT_MESSAGE_SIZE_THRESHOLD: usize = 1000usize;
 
 /// The maximum size of gossip messages.
 pub fn gossip_max_size(is_merge_enabled: bool, gossip_max_size: usize) -> usize {
@@ -144,6 +145,10 @@ pub struct Config {
 
     /// Configuration for the inbound rate limiter (requests received by this node).
     pub inbound_rate_limiter_config: Option<InboundRateLimiterConfig>,
+
+    /// Configuration for the minimum message size for which IDONTWANT messages are send in the mesh.
+    /// Lower the value reduces the optimization effect of the IDONTWANT messages.
+    pub idontwant_message_size_threshold: usize,
 
     /// Libp2p Private key file.
     pub libp2p_private_key_file: Option<PathBuf>,
@@ -359,6 +364,7 @@ impl Default for Config {
             outbound_rate_limiter_config: None,
             invalid_block_storage: None,
             inbound_rate_limiter_config: None,
+            idontwant_message_size_threshold: DEFAULT_IDONTWANT_MESSAGE_SIZE_THRESHOLD,
             libp2p_private_key_file: None,
         }
     }
@@ -441,6 +447,7 @@ pub fn gossipsub_config(
     gossipsub_config_params: GossipsubConfigParams,
     seconds_per_slot: u64,
     slots_per_epoch: u64,
+    idontwant_message_size_threshold: usize,
 ) -> gossipsub::Config {
     fn prefix(
         prefix: [u8; 4],
@@ -510,6 +517,7 @@ pub fn gossipsub_config(
         .duplicate_cache_time(duplicate_cache_time)
         .message_id_fn(gossip_message_id)
         .allow_self_origin(true)
+        .idontwant_message_size_threshold(idontwant_message_size_threshold)
         .build()
         .expect("valid gossipsub configuration")
 }

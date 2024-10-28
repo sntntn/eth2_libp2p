@@ -249,6 +249,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                 .phase0_preset()
                 .slots_per_epoch()
                 .get(),
+            config.idontwant_message_size_threshold,
         );
 
         let score_settings = PeerScoreSettings::new(&chain_config, gs_config.mesh_n());

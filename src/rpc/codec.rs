@@ -2,8 +2,8 @@ use crate::rpc::methods::*;
 use crate::rpc::protocol::{
     Encoding, ProtocolId, RPCError, SupportedProtocol, ERROR_TYPE_MAX, ERROR_TYPE_MIN,
 };
-use crate::types::ForkContext;
 use crate::rpc::RequestType;
+use crate::types::ForkContext;
 use libp2p::bytes::BufMut;
 use libp2p::bytes::BytesMut;
 use snap::read::FrameDecoder;
@@ -145,7 +145,6 @@ impl<P: Preset> Encoder<RpcResponse<P>> for SSZSnappyInboundCodec<P> {
         self.encode_response(item, dst)
     }
 }
-
 
 // Decoder for inbound streams: Decodes RPC requests from peers
 impl<P: Preset> Decoder for SSZSnappyInboundCodec<P> {
@@ -610,11 +609,11 @@ fn handle_rpc_request<P: Preset>(
         SupportedProtocol::PingV1 => Ok(Some(RequestType::Ping(Ping {
             data: u64::from_ssz_default(decoded_buffer)?,
         }))),
-        SupportedProtocol::LightClientBootstrapV1 => Ok(Some(
-            RequestType::LightClientBootstrap(LightClientBootstrapRequest {
+        SupportedProtocol::LightClientBootstrapV1 => Ok(Some(RequestType::LightClientBootstrap(
+            LightClientBootstrapRequest {
                 root: H256::from_ssz_default(decoded_buffer)?,
-            }),
-        )),
+            },
+        ))),
         SupportedProtocol::LightClientOptimisticUpdateV1 => {
             Ok(Some(RequestType::LightClientOptimisticUpdate))
         }
@@ -661,9 +660,11 @@ fn handle_rpc_response<P: Preset>(
         SupportedProtocol::GoodbyeV1 => Err(RPCError::InvalidData(
             "Goodbye RPC message has no valid response".to_string(),
         )),
-        SupportedProtocol::BlocksByRangeV1 => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
-            SignedBeaconBlock::Phase0(Phase0SignedBeaconBlock::from_ssz_default(decoded_buffer)?),
-        )))),
+        SupportedProtocol::BlocksByRangeV1 => Ok(Some(RpcSuccessResponse::BlocksByRange(
+            Arc::new(SignedBeaconBlock::Phase0(
+                Phase0SignedBeaconBlock::from_ssz_default(decoded_buffer)?,
+            )),
+        ))),
         SupportedProtocol::BlocksByRootV1 => Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
             SignedBeaconBlock::Phase0(Phase0SignedBeaconBlock::from_ssz_default(decoded_buffer)?),
         )))),
@@ -710,11 +711,13 @@ fn handle_rpc_response<P: Preset>(
                 RpcErrorResponse::InvalidRequest,
                 format!("light_client_bootstrap topic invalid for given fork {fork_name:?}",),
             )),
-            Some(Phase::Altair | Phase::Bellatrix) => Ok(Some(RpcSuccessResponse::LightClientBootstrap(
-                SszReadDefault::from_ssz_default(decoded_buffer)
-                    .map(LightClientBootstrap::Altair)
-                    .map(Arc::new)?,
-            ))),
+            Some(Phase::Altair | Phase::Bellatrix) => {
+                Ok(Some(RpcSuccessResponse::LightClientBootstrap(
+                    SszReadDefault::from_ssz_default(decoded_buffer)
+                        .map(LightClientBootstrap::Altair)
+                        .map(Arc::new)?,
+                )))
+            }
             Some(Phase::Capella) => Ok(Some(RpcSuccessResponse::LightClientBootstrap(
                 SszReadDefault::from_ssz_default(decoded_buffer)
                     .map(LightClientBootstrap::Capella)
@@ -1248,7 +1251,9 @@ mod tests {
             encode_then_decode_response::<Mainnet>(
                 &config,
                 SupportedProtocol::BlocksByRangeV1,
-                RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(empty_base_block()))),
+                RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(
+                    empty_base_block()
+                ))),
                 Phase::Phase0,
             ),
             Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
@@ -1261,7 +1266,9 @@ mod tests {
                 encode_then_decode_response::<Mainnet>(
                     &config,
                     SupportedProtocol::BlocksByRangeV1,
-                    RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(altair_block()))),
+                    RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(
+                        altair_block()
+                    ))),
                     Phase::Altair,
                 )
                 .unwrap_err(),
@@ -1274,12 +1281,14 @@ mod tests {
             encode_then_decode_response::<Mainnet>(
                 &config,
                 SupportedProtocol::BlocksByRootV1,
-                RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(empty_base_block()))),
+                RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                    empty_base_block()
+                ))),
                 Phase::Phase0,
             ),
-            Ok(Some(RpcSuccessResponse::BlocksByRoot(
-                Arc::new(empty_base_block())
-            )))
+            Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                empty_base_block()
+            ))))
         );
 
         assert!(
@@ -1287,7 +1296,9 @@ mod tests {
                 encode_then_decode_response::<Mainnet>(
                     &config,
                     SupportedProtocol::BlocksByRootV1,
-                    RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(altair_block()))),
+                    RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(
+                        Arc::new(altair_block())
+                    )),
                     Phase::Altair,
                 )
                 .unwrap_err(),
@@ -1347,7 +1358,9 @@ mod tests {
             encode_then_decode_response::<Mainnet>(
                 &config,
                 SupportedProtocol::BlocksByRangeV2,
-                RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(empty_base_block()))),
+                RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(
+                    empty_base_block()
+                ))),
                 Phase::Phase0,
             ),
             Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
@@ -1362,7 +1375,9 @@ mod tests {
             encode_then_decode_response::<Mainnet>(
                 &config,
                 SupportedProtocol::BlocksByRangeV2,
-                RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(empty_base_block()))),
+                RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(
+                    empty_base_block()
+                ))),
                 Phase::Altair,
             ),
             Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
@@ -1413,12 +1428,14 @@ mod tests {
             encode_then_decode_response::<Mainnet>(
                 &config,
                 SupportedProtocol::BlocksByRootV2,
-                RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(empty_base_block()))),
+                RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                    empty_base_block()
+                ))),
                 Phase::Phase0,
             ),
-            Ok(Some(RpcSuccessResponse::BlocksByRoot(
-                Arc::new(empty_base_block())
-            )))
+            Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                empty_base_block()
+            ))))
         );
 
         assert_eq!(
@@ -1428,7 +1445,9 @@ mod tests {
                 RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(altair_block()))),
                 Phase::Altair,
             ),
-            Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(altair_block()))))
+            Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
+                altair_block()
+            ))))
         );
 
         assert_eq!(
@@ -1499,7 +1518,9 @@ mod tests {
         let mut encoded_bytes = encode_response::<Mainnet>(
             &config,
             SupportedProtocol::BlocksByRangeV2,
-            RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(empty_base_block()))),
+            RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(
+                empty_base_block(),
+            ))),
             Phase::Phase0,
         )
         .unwrap();
@@ -1520,7 +1541,9 @@ mod tests {
         let mut encoded_bytes = encode_response::<Mainnet>(
             &config,
             SupportedProtocol::BlocksByRootV2,
-            RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(empty_base_block()))),
+            RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                empty_base_block(),
+            ))),
             Phase::Phase0,
         )
         .unwrap();
@@ -1542,7 +1565,9 @@ mod tests {
         let mut encoded_bytes = encode_response::<Mainnet>(
             &config,
             SupportedProtocol::BlocksByRangeV2,
-            RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(empty_base_block()))),
+            RpcResponse::Success(RpcSuccessResponse::BlocksByRange(Arc::new(
+                empty_base_block(),
+            ))),
             Phase::Altair,
         )
         .unwrap();
@@ -1571,7 +1596,9 @@ mod tests {
         let mut encoded_bytes = encode_response::<Mainnet>(
             &config,
             SupportedProtocol::BlocksByRootV2,
-            RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(empty_base_block()))),
+            RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                empty_base_block(),
+            ))),
             Phase::Altair,
         )
         .unwrap();
@@ -1635,7 +1662,9 @@ mod tests {
         let mut encoded_bytes = encode_response::<Mainnet>(
             &config,
             SupportedProtocol::BlocksByRootV2,
-            RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(empty_base_block()))),
+            RpcResponse::Success(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                empty_base_block(),
+            ))),
             Phase::Altair,
         )
         .unwrap();
