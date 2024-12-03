@@ -60,7 +60,7 @@ impl Serialize for PeerIdSerialized {
 // A wrapper struct that prints a dial error nicely.
 struct ClearDialError<'a>(&'a DialError);
 
-impl<'a> ClearDialError<'a> {
+impl ClearDialError<'_> {
     fn most_inner_error(err: &(dyn std::error::Error)) -> &(dyn std::error::Error) {
         let mut current = err;
         while let Some(source) = current.source() {
@@ -82,7 +82,7 @@ impl<'de> Deserialize<'de> for PeerIdSerialized {
     }
 }
 
-impl<'a> std::fmt::Display for ClearDialError<'a> {
+impl std::fmt::Display for ClearDialError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         match &self.0 {
             DialError::Transport(errors) => {
