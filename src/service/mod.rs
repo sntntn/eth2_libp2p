@@ -704,6 +704,10 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         &self.swarm.behaviour().peer_manager
     }
 
+    pub fn network_globals(&self) -> &Arc<NetworkGlobals> {
+        &self.network_globals
+    }
+
     /// Returns the local ENR of the node.
     pub fn local_enr(&self) -> Enr {
         self.network_globals.local_enr()

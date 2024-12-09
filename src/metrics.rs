@@ -9,8 +9,14 @@ pub use crate::common::metrics::{
     try_create_float_gauge_vec, try_create_int_counter, try_create_int_counter_vec,
     try_create_int_gauge, try_create_int_gauge_vec,
 };
-use crate::{common::metrics::set_gauge_entry, NetworkGlobals};
+use crate::{
+    common::metrics::{get_int_gauge, set_gauge_entry},
+    peer_manager::peerdb::client::ClientKind,
+    types::GossipKind,
+    GossipTopic, Gossipsub, NetworkGlobals,
+};
 use prometheus::{Gauge, GaugeVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Result};
+use strum::IntoEnumIterator as _;
 
 pub static NAT_OPEN: LazyLock<Result<IntGaugeVec>> = LazyLock::new(|| {
     try_create_int_gauge_vec(
@@ -215,6 +221,24 @@ pub static TOTAL_SUBNET_QUERIES: LazyLock<Result<IntCounterVec>> = LazyLock::new
     )
 });
 
+pub static BEACON_BLOCK_MESH_PEERS_PER_CLIENT: LazyLock<Result<IntGaugeVec>> =
+    LazyLock::new(|| {
+        try_create_int_gauge_vec(
+            "block_mesh_peers_per_client",
+            "Number of mesh peers for BeaconBlock topic per client",
+            &["Client"],
+        )
+    });
+
+pub static BEACON_AGGREGATE_AND_PROOF_MESH_PEERS_PER_CLIENT: LazyLock<Result<IntGaugeVec>> =
+    LazyLock::new(|| {
+        try_create_int_gauge_vec(
+            "beacon_aggregate_and_proof_mesh_peers_per_client",
+            "Number of mesh peers for BeaconAggregateAndProof topic per client",
+            &["Client"],
+        )
+    });
+
 /*
  * Peer Reporting
  */
@@ -226,9 +250,10 @@ pub static REPORT_PEER_MSGS: LazyLock<Result<IntCounterVec>> = LazyLock::new(|| 
     )
 });
 
-pub fn scrape_discovery_metrics() {
+pub fn update_discovery_metrics() {
     let metrics =
         discv5::metrics::Metrics::from(discv5::Discv5::<discv5::DefaultProtocolId>::raw_metrics());
+
     set_float_gauge(&DISCOVERY_REQS, metrics.unsolicited_requests_per_second);
     set_gauge(&DISCOVERY_SESSIONS, metrics.active_sessions as i64);
     set_gauge_vec(&DISCOVERY_BYTES, &["inbound"], metrics.bytes_recv as i64);
@@ -237,7 +262,68 @@ pub fn scrape_discovery_metrics() {
     set_gauge_vec(&NAT_OPEN, &["discv5_ipv6"], metrics.ipv6_contactable as i64);
 }
 
-pub fn scrape_sync_metrics(network_globals: &Arc<NetworkGlobals>) {
+pub fn update_gossipsub_extended_metrics(
+    gossipsub: &Gossipsub,
+    network_globals: &Arc<NetworkGlobals>,
+) {
+    // Mesh peers per client
+    // Reset the gauges
+    for client_kind in ClientKind::iter() {
+        set_gauge_vec(
+            &BEACON_BLOCK_MESH_PEERS_PER_CLIENT,
+            &[client_kind.as_ref()],
+            0_i64,
+        );
+        set_gauge_vec(
+            &BEACON_AGGREGATE_AND_PROOF_MESH_PEERS_PER_CLIENT,
+            &[client_kind.as_ref()],
+            0_i64,
+        );
+    }
+
+    for topic_hash in gossipsub.topics() {
+        if let Ok(topic) = GossipTopic::decode(topic_hash.as_str()) {
+            match topic.kind() {
+                GossipKind::Attestation(_subnet_id) => {}
+                GossipKind::BeaconBlock => {
+                    for peer_id in gossipsub.mesh_peers(topic_hash) {
+                        let client = network_globals
+                            .peers
+                            .read()
+                            .peer_info(peer_id)
+                            .map(|peer_info| peer_info.client().kind.into())
+                            .unwrap_or_else(|| "Unknown");
+                        if let Some(v) =
+                            get_int_gauge(&BEACON_BLOCK_MESH_PEERS_PER_CLIENT, &[client])
+                        {
+                            v.inc()
+                        };
+                    }
+                }
+                GossipKind::BeaconAggregateAndProof => {
+                    for peer_id in gossipsub.mesh_peers(topic_hash) {
+                        let client = network_globals
+                            .peers
+                            .read()
+                            .peer_info(peer_id)
+                            .map(|peer_info| peer_info.client().kind.into())
+                            .unwrap_or_else(|| "Unknown");
+                        if let Some(v) = get_int_gauge(
+                            &BEACON_AGGREGATE_AND_PROOF_MESH_PEERS_PER_CLIENT,
+                            &[client],
+                        ) {
+                            v.inc()
+                        };
+                    }
+                }
+                GossipKind::SyncCommitteeMessage(_subnet_id) => {}
+                _kind => {}
+            }
+        }
+    }
+}
+
+pub fn update_sync_metrics(network_globals: &Arc<NetworkGlobals>) {
     // reset the counts
     if PEERS_PER_SYNC_TYPE
         .as_ref()
