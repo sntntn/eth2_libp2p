@@ -467,7 +467,8 @@ impl ProtocolId {
             ),
             Protocol::BlobsByRoot => RpcLimits::new(
                 0,
-                chain_config.max_request_blob_sidecars_electra as usize * BlobIdentifier::SIZE.get(),
+                chain_config.max_request_blob_sidecars_electra as usize
+                    * BlobIdentifier::SIZE.get(),
             ),
             Protocol::DataColumnsByRoot => RpcLimits::new(
                 0,
@@ -697,7 +698,7 @@ impl<P: Preset> RequestType<P> {
             RequestType::BlobsByRange(req) => match req {
                 BlobsByRangeRequest::V1(_) => SupportedProtocol::BlobsByRangeV1,
                 BlobsByRangeRequest::V2(_) => SupportedProtocol::BlobsByRangeV2,
-            }
+            },
             RequestType::BlobsByRoot(req) => match req {
                 BlobsByRootRequest::V1(_) => SupportedProtocol::BlobsByRootV1,
                 BlobsByRootRequest::V2(_) => SupportedProtocol::BlobsByRootV2,

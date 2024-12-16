@@ -358,7 +358,7 @@ impl SszWrite for GoodbyeReason {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BlobsByRangeRequest {
     V1(BlobsByRangeRequestV1),
-    V2(BlobsByRangeRequestV2)
+    V2(BlobsByRangeRequestV2),
 }
 
 /// Request a number of beacon blobs from a peer.
@@ -1082,7 +1082,8 @@ impl std::fmt::Display for BlobsByRangeRequest {
         write!(
             f,
             "Request: BlobsByRange: Start Slot: {}, Count: {}",
-            self.start_slot(), self.count()
+            self.start_slot(),
+            self.count()
         )
     }
 }

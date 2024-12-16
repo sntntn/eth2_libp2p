@@ -701,7 +701,7 @@ fn handle_rpc_request<P: Preset>(
                     &(config.max_request_blob_sidecars_electra as usize),
                     decoded_buffer,
                 )?,
-            })
+            }),
         ))),
         SupportedProtocol::BlobsByRootV1 => Ok(Some(RequestType::BlobsByRoot(
             BlobsByRootRequest::V1(BlobsByRootRequestV1 {
@@ -709,7 +709,7 @@ fn handle_rpc_request<P: Preset>(
                     &(config.max_request_blob_sidecars as usize),
                     decoded_buffer,
                 )?,
-            })
+            }),
         ))),
         SupportedProtocol::DataColumnsByRangeV1 => Ok(Some(RequestType::DataColumnsByRange(
             DataColumnsByRangeRequest::from_ssz_default(decoded_buffer)?,
@@ -1295,7 +1295,7 @@ mod tests {
             core::iter::once(BlobIdentifier {
                 block_root: H256::zero(),
                 index: 0,
-            })
+            }),
         )
     }
 
@@ -1305,7 +1305,7 @@ mod tests {
             core::iter::once(BlobIdentifier {
                 block_root: H256::zero(),
                 index: 0,
-            })
+            }),
         )
     }
 

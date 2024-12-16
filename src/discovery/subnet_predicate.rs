@@ -1,6 +1,6 @@
 //! The subnet predicate used for searching for a particular subnet.
 use super::*;
-use eip_7594::get_custody_columns;
+use eip_7594::get_custody_groups;
 use slog::trace;
 use ssz::Uint256;
 use std::sync::Arc;
@@ -32,7 +32,8 @@ pub fn subnet_predicate(
             }),
             Subnet::DataColumn(subnet_id) => {
                 if let Ok(custody_subnet_count) = enr.custody_subnet_count(&chain_config) {
-                    let subnets = get_custody_columns(
+                    // TODO(feature/fulu): review this
+                    let subnets = get_custody_groups(
                         Uint256::from_be_bytes(enr.node_id().raw()),
                         custody_subnet_count,
                     );
