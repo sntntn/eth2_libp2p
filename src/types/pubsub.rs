@@ -8,6 +8,7 @@ use ssz::{SszReadDefault, SszWrite as _, WriteError};
 use std::boxed::Box;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
+use types::electra::containers::SingleAttestation;
 use types::{
     altair::containers::{
         SignedBeaconBlock as AltairSignedBeaconBlock, SignedContributionAndProof,
@@ -22,7 +23,7 @@ use types::{
     deneb::containers::{BlobSidecar, SignedBeaconBlock as DenebBeaconBlock},
     eip7594::DataColumnSidecar,
     electra::containers::{
-        Attestation as ElectraAttestation, AttesterSlashing as ElectraAttesterSlashing,
+        AttesterSlashing as ElectraAttesterSlashing,
         SignedAggregateAndProof as ElectraSignedAggregateAndProof,
         SignedBeaconBlock as ElectraBeaconBlock,
     },
@@ -51,6 +52,8 @@ pub enum PubsubMessage<P: Preset> {
     AggregateAndProofAttestation(Arc<SignedAggregateAndProof<P>>),
     /// Gossipsub message providing notification of a raw un-aggregated attestation with its shard id.
     Attestation(SubnetId, Arc<Attestation<P>>),
+    /// Gossipsub message providing notification of a `SingleAttestation`` with its shard id.
+    SingleAttestation(SubnetId, SingleAttestation),
     /// Gossipsub message providing notification of a voluntary exit.
     VoluntaryExit(Box<SignedVoluntaryExit>),
     /// Gossipsub message providing notification of a new proposer slashing.
@@ -148,6 +151,7 @@ impl<P: Preset> PubsubMessage<P> {
             }
             PubsubMessage::AggregateAndProofAttestation(_) => GossipKind::BeaconAggregateAndProof,
             PubsubMessage::Attestation(subnet_id, _) => GossipKind::Attestation(*subnet_id),
+            PubsubMessage::SingleAttestation(subnet_id, _) => GossipKind::Attestation(*subnet_id),
             PubsubMessage::VoluntaryExit(_) => GossipKind::VoluntaryExit,
             PubsubMessage::ProposerSlashing(_) => GossipKind::ProposerSlashing,
             PubsubMessage::AttesterSlashing(_) => GossipKind::AttesterSlashing,
@@ -208,32 +212,38 @@ impl<P: Preset> PubsubMessage<P> {
                         )))
                     }
                     GossipKind::Attestation(subnet_id) => {
-                        let attestation =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                                Some(Phase::Phase0)
-                                | Some(Phase::Altair)
-                                | Some(Phase::Bellatrix)
-                                | Some(Phase::Capella)
-                                | Some(Phase::Deneb) => Attestation::Phase0(
+                        match fork_context.from_context_bytes(gossip_topic.fork_digest) {
+                            Some(Phase::Phase0)
+                            | Some(Phase::Altair)
+                            | Some(Phase::Bellatrix)
+                            | Some(Phase::Capella)
+                            | Some(Phase::Deneb) => {
+                                let attestation = Attestation::Phase0(
                                     Phase0Attestation::from_ssz_default(data)
                                         .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Electra) => Attestation::Electra(
-                                    ElectraAttestation::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                None => {
-                                    return Err(format!(
-                                        "Unknown gossipsub fork digest: {:?}",
-                                        gossip_topic.fork_digest
-                                    ))
-                                }
-                            };
+                                );
 
-                        Ok(PubsubMessage::Attestation(
-                            *subnet_id,
-                            Arc::new(attestation),
-                        ))
+                                Ok(PubsubMessage::Attestation(
+                                    *subnet_id,
+                                    Arc::new(attestation),
+                                ))
+                            }
+                            Some(Phase::Electra) => {
+                                let single_attestation = SingleAttestation::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?;
+
+                                Ok(PubsubMessage::SingleAttestation(
+                                    *subnet_id,
+                                    single_attestation,
+                                ))
+                            }
+                            None => {
+                                return Err(format!(
+                                    "Unknown gossipsub fork digest: {:?}",
+                                    gossip_topic.fork_digest
+                                ))
+                            }
+                        }
                     }
                     GossipKind::BeaconBlock => {
                         let beacon_block =
@@ -499,6 +509,7 @@ impl<P: Preset> PubsubMessage<P> {
             PubsubMessage::ProposerSlashing(data) => data.to_ssz(),
             PubsubMessage::AttesterSlashing(data) => data.to_ssz(),
             PubsubMessage::Attestation(_, attestation) => attestation.to_ssz(),
+            PubsubMessage::SingleAttestation(_, attestation) => attestation.to_ssz(),
             PubsubMessage::SignedContributionAndProof(data) => data.to_ssz(),
             PubsubMessage::SyncCommitteeMessage(data) => data.1.to_ssz(),
             PubsubMessage::BlsToExecutionChange(data) => data.to_ssz(),
@@ -541,6 +552,15 @@ impl<P: Preset> std::fmt::Display for PubsubMessage<P> {
                 subnet_id,
                 attestation.data().slot,
                 attestation.data().index,
+            ),
+            PubsubMessage::SingleAttestation(subnet_id, attestation) => write!(
+                f,
+                "SingleAttestation: subnet_id: {}, attestation_slot: {}, attestation_index: {}, \
+                 attester_index: {}",
+                subnet_id,
+                attestation.data.slot,
+                attestation.committee_index,
+                attestation.attester_index,
             ),
             PubsubMessage::VoluntaryExit(_data) => write!(f, "Voluntary Exit"),
             PubsubMessage::ProposerSlashing(_data) => write!(f, "Proposer Slashing"),
