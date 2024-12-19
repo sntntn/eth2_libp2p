@@ -308,9 +308,14 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             let update_gossipsub_scores = tokio::time::interval(params.decay_interval);
             let possible_fork_digests = ctx.fork_context.all_fork_digests();
 
+            let max_blob_sideacar_subnet_count = chain_config
+                .blob_sidecar_subnet_count
+                .get()
+                .max(chain_config.blob_sidecar_subnet_count_electra.get());
+
             let max_topics = AttestationSubnetCount::USIZE
                 + SyncCommitteeSubnetCount::USIZE
-                + chain_config.blob_sidecar_subnet_count.get() as usize
+                + max_blob_sideacar_subnet_count as usize
                 + chain_config.data_column_sidecar_subnet_count as usize
                 + BASE_CORE_TOPICS.len()
                 + ALTAIR_CORE_TOPICS.len()
@@ -323,7 +328,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
                     possible_fork_digests,
                     AttestationSubnetCount::U64,
                     SyncCommitteeSubnetCount::U64,
-                    chain_config.blob_sidecar_subnet_count.get(),
+                    max_blob_sideacar_subnet_count,
                     chain_config.data_column_sidecar_subnet_count,
                 ),
                 // during a fork we subscribe to both the old and new topics
