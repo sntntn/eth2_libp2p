@@ -355,25 +355,9 @@ impl SszWrite for GoodbyeReason {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum BlobsByRangeRequest {
-    V1(BlobsByRangeRequestV1),
-    V2(BlobsByRangeRequestV2),
-}
-
 /// Request a number of beacon blobs from a peer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ssz)]
-pub struct BlobsByRangeRequestV1 {
-    /// The starting slot to request blobs.
-    pub start_slot: u64,
-
-    /// The number of slots from the start slot.
-    pub count: u64,
-}
-
-/// Request a number of beacon blobs from a peer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ssz)]
-pub struct BlobsByRangeRequestV2 {
+pub struct BlobsByRangeRequest {
     /// The starting slot to request blobs.
     pub start_slot: u64,
 
@@ -382,32 +366,8 @@ pub struct BlobsByRangeRequestV2 {
 }
 
 impl BlobsByRangeRequest {
-    pub fn new(start_slot: u64, count: u64) -> Self {
-        Self::V2(BlobsByRangeRequestV2 { start_slot, count })
-    }
-
-    pub fn new_v1(start_slot: u64, count: u64) -> Self {
-        Self::V1(BlobsByRangeRequestV1 { start_slot, count })
-    }
-
-    pub fn start_slot(&self) -> u64 {
-        match self {
-            Self::V1(req) => req.start_slot,
-            Self::V2(req) => req.start_slot,
-        }
-    }
-
-    pub fn count(&self) -> u64 {
-        match self {
-            Self::V1(req) => req.count,
-            Self::V2(req) => req.count,
-        }
-    }
     pub fn max_blobs_requested<P: Preset>(&self) -> u64 {
-        match self {
-            Self::V1(req) => req.count.saturating_mul(P::MaxBlobsPerBlock::U64),
-            Self::V2(req) => req.count.saturating_mul(P::MaxBlobsPerBlockElectra::U64),
-        }
+        self.count.saturating_mul(P::MaxBlobsPerBlockElectra::U64)
     }
 }
 
@@ -512,7 +472,7 @@ impl DataColumnsByRangeRequest {
         Ok(DataColumnsByRangeRequest {
             start_slot: 0,
             count: 0,
-            columns: ContiguousList::try_from(vec![0; NumberOfColumns::USIZE])?,
+            columns: ContiguousList::full(0),
         }
         .to_ssz()?
         .len())
@@ -597,6 +557,13 @@ impl OldBlocksByRangeRequest {
             Self::V2(req) => req.step,
         }
     }
+
+    pub fn max_request_blocks(&self, config: &ChainConfig) -> u64 {
+        match self {
+            Self::V1(_) => config.max_request_blocks,
+            Self::V2(_) => config.max_request_blocks_deneb,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -658,24 +625,18 @@ impl BlocksByRootRequest {
             Self::V2(req) => req.block_roots,
         }
     }
-}
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum BlobsByRootRequest {
-    V1(BlobsByRootRequestV1),
-    V2(BlobsByRootRequestV2),
-}
-
-/// Request a number of beacon blocks and blobs from a peer.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlobsByRootRequestV1 {
-    /// The list of beacon block roots being requested.
-    pub blob_ids: DynamicList<BlobIdentifier>,
+    pub fn max_request_blocks(&self, config: &ChainConfig) -> u64 {
+        match self {
+            Self::V1(_) => config.max_request_blocks,
+            Self::V2(_) => config.max_request_blocks_deneb,
+        }
+    }
 }
 
 /// Request a number of beacon blocks and blobs from a peer.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlobsByRootRequestV2 {
+pub struct BlobsByRootRequest {
     /// The list of beacon block roots being requested.
     pub blob_ids: DynamicList<BlobIdentifier>,
 }
@@ -690,33 +651,7 @@ impl BlobsByRootRequest {
             config.max_request_blob_sidecars_electra as usize,
         );
 
-        Self::V2(BlobsByRootRequestV2 { blob_ids })
-    }
-
-    pub fn new_v1(
-        config: &ChainConfig,
-        blob_identifiers: impl Iterator<Item = BlobIdentifier>,
-    ) -> Self {
-        let blob_ids = DynamicList::from_iter_with_maximum(
-            blob_identifiers,
-            config.max_request_blob_sidecars as usize,
-        );
-
-        Self::V1(BlobsByRootRequestV1 { blob_ids })
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            Self::V1(req) => req.blob_ids.len(),
-            Self::V2(req) => req.blob_ids.len(),
-        }
-    }
-
-    pub fn blob_ids(self) -> DynamicList<BlobIdentifier> {
-        match self {
-            Self::V1(req) => req.blob_ids,
-            Self::V2(req) => req.blob_ids,
-        }
+        Self { blob_ids }
     }
 }
 
@@ -1072,7 +1007,7 @@ impl std::fmt::Display for BlobsByRootRequest {
         write!(
             f,
             "Request: BlobsByRoot: Number of Requested Roots: {}",
-            self.len()
+            self.blob_ids.len()
         )
     }
 }
@@ -1082,8 +1017,7 @@ impl std::fmt::Display for BlobsByRangeRequest {
         write!(
             f,
             "Request: BlobsByRange: Start Slot: {}, Count: {}",
-            self.start_slot(),
-            self.count()
+            self.start_slot, self.count
         )
     }
 }

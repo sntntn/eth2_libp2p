@@ -250,9 +250,7 @@ pub enum SupportedProtocol {
     BlocksByRootV1,
     BlocksByRootV2,
     BlobsByRangeV1,
-    BlobsByRangeV2,
     BlobsByRootV1,
-    BlobsByRootV2,
     DataColumnsByRootV1,
     DataColumnsByRangeV1,
     PingV1,
@@ -275,9 +273,7 @@ impl SupportedProtocol {
             SupportedProtocol::BlocksByRootV1 => "1",
             SupportedProtocol::BlocksByRootV2 => "2",
             SupportedProtocol::BlobsByRangeV1 => "1",
-            SupportedProtocol::BlobsByRangeV2 => "2",
             SupportedProtocol::BlobsByRootV1 => "1",
-            SupportedProtocol::BlobsByRootV2 => "2",
             SupportedProtocol::DataColumnsByRootV1 => "1",
             SupportedProtocol::DataColumnsByRangeV1 => "1",
             SupportedProtocol::PingV1 => "1",
@@ -300,9 +296,7 @@ impl SupportedProtocol {
             SupportedProtocol::BlocksByRootV1 => Protocol::BlocksByRoot,
             SupportedProtocol::BlocksByRootV2 => Protocol::BlocksByRoot,
             SupportedProtocol::BlobsByRangeV1 => Protocol::BlobsByRange,
-            SupportedProtocol::BlobsByRangeV2 => Protocol::BlobsByRange,
             SupportedProtocol::BlobsByRootV1 => Protocol::BlobsByRoot,
-            SupportedProtocol::BlobsByRootV2 => Protocol::BlobsByRoot,
             SupportedProtocol::DataColumnsByRootV1 => Protocol::DataColumnsByRoot,
             SupportedProtocol::DataColumnsByRangeV1 => Protocol::DataColumnsByRange,
             SupportedProtocol::PingV1 => Protocol::Ping,
@@ -344,9 +338,7 @@ impl SupportedProtocol {
         }
         if fork_context.fork_exists(Phase::Deneb) {
             supported.extend_from_slice(&[
-                ProtocolId::new(SupportedProtocol::BlobsByRootV2, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::BlobsByRangeV1, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::BlobsByRootV2, Encoding::SSZSnappy),
+                ProtocolId::new(SupportedProtocol::BlobsByRootV1, Encoding::SSZSnappy),
                 ProtocolId::new(SupportedProtocol::BlobsByRangeV1, Encoding::SSZSnappy),
             ]);
         }
@@ -462,8 +454,8 @@ impl ProtocolId {
                 chain_config.max_request_blocks(Phase::Phase0) as usize * H256::SIZE.get(),
             ),
             Protocol::BlobsByRange => RpcLimits::new(
-                BlobsByRangeRequestV2::SIZE.get(),
-                BlobsByRangeRequestV2::SIZE.get(),
+                BlobsByRangeRequest::SIZE.get(),
+                BlobsByRangeRequest::SIZE.get(),
             ),
             Protocol::BlobsByRoot => RpcLimits::new(
                 0,
@@ -529,9 +521,7 @@ impl ProtocolId {
             SupportedProtocol::BlocksByRangeV2
             | SupportedProtocol::BlocksByRootV2
             | SupportedProtocol::BlobsByRangeV1
-            | SupportedProtocol::BlobsByRangeV2
             | SupportedProtocol::BlobsByRootV1
-            | SupportedProtocol::BlobsByRootV2
             | SupportedProtocol::DataColumnsByRootV1
             | SupportedProtocol::DataColumnsByRangeV1
             | SupportedProtocol::LightClientBootstrapV1
@@ -670,7 +660,7 @@ impl<P: Preset> RequestType<P> {
             RequestType::BlocksByRange(req) => req.count(),
             RequestType::BlocksByRoot(req) => req.len() as u64,
             RequestType::BlobsByRange(req) => req.max_blobs_requested::<P>(),
-            RequestType::BlobsByRoot(req) => req.len() as u64,
+            RequestType::BlobsByRoot(req) => req.blob_ids.len() as u64,
             RequestType::DataColumnsByRoot(req) => req.data_column_ids.len() as u64,
             RequestType::DataColumnsByRange(req) => req.max_requested::<P>(),
             RequestType::Ping(_) => 1,
@@ -695,14 +685,8 @@ impl<P: Preset> RequestType<P> {
                 BlocksByRootRequest::V1(_) => SupportedProtocol::BlocksByRootV1,
                 BlocksByRootRequest::V2(_) => SupportedProtocol::BlocksByRootV2,
             },
-            RequestType::BlobsByRange(req) => match req {
-                BlobsByRangeRequest::V1(_) => SupportedProtocol::BlobsByRangeV1,
-                BlobsByRangeRequest::V2(_) => SupportedProtocol::BlobsByRangeV2,
-            },
-            RequestType::BlobsByRoot(req) => match req {
-                BlobsByRootRequest::V1(_) => SupportedProtocol::BlobsByRootV1,
-                BlobsByRootRequest::V2(_) => SupportedProtocol::BlobsByRootV2,
-            },
+            RequestType::BlobsByRange(_) => SupportedProtocol::BlobsByRangeV1,
+            RequestType::BlobsByRoot(_) => SupportedProtocol::BlobsByRootV1,
             RequestType::DataColumnsByRoot(_) => SupportedProtocol::DataColumnsByRootV1,
             RequestType::DataColumnsByRange(_) => SupportedProtocol::DataColumnsByRangeV1,
             RequestType::Ping(_) => SupportedProtocol::PingV1,
@@ -766,14 +750,14 @@ impl<P: Preset> RequestType<P> {
                 ProtocolId::new(SupportedProtocol::BlocksByRootV2, Encoding::SSZSnappy),
                 ProtocolId::new(SupportedProtocol::BlocksByRootV1, Encoding::SSZSnappy),
             ],
-            RequestType::BlobsByRange(_) => vec![
-                ProtocolId::new(SupportedProtocol::BlobsByRangeV2, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::BlobsByRangeV1, Encoding::SSZSnappy),
-            ],
-            RequestType::BlobsByRoot(_) => vec![
-                ProtocolId::new(SupportedProtocol::BlobsByRootV2, Encoding::SSZSnappy),
-                ProtocolId::new(SupportedProtocol::BlobsByRootV1, Encoding::SSZSnappy),
-            ],
+            RequestType::BlobsByRange(_) => vec![ProtocolId::new(
+                SupportedProtocol::BlobsByRangeV1,
+                Encoding::SSZSnappy,
+            )],
+            RequestType::BlobsByRoot(_) => vec![ProtocolId::new(
+                SupportedProtocol::BlobsByRootV1,
+                Encoding::SSZSnappy,
+            )],
             RequestType::DataColumnsByRoot(_) => vec![ProtocolId::new(
                 SupportedProtocol::DataColumnsByRootV1,
                 Encoding::SSZSnappy,
