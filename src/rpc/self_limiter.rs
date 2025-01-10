@@ -1,5 +1,6 @@
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -10,6 +11,8 @@ use slog::{crit, debug, Logger};
 use smallvec::SmallVec;
 use tokio_util::time::DelayQueue;
 use types::preset::Preset;
+
+use crate::types::ForkContext;
 
 use super::{
     config::OutboundRateLimiterConfig,
@@ -50,9 +53,13 @@ pub enum Error {
 
 impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
     /// Creates a new [`SelfRateLimiter`] based on configration values.
-    pub fn new(config: OutboundRateLimiterConfig, log: Logger) -> Result<Self, &'static str> {
+    pub fn new(
+        config: OutboundRateLimiterConfig,
+        fork_context: Arc<ForkContext>,
+        log: Logger,
+    ) -> Result<Self, &'static str> {
         debug!(log, "Using self rate limiting params"; "config" => ?config);
-        let limiter = RateLimiter::new_with_config(config.0)?;
+        let limiter = RateLimiter::new_with_config(config.0, fork_context)?;
 
         Ok(SelfRateLimiter {
             delayed_requests: Default::default(),
@@ -213,10 +220,13 @@ mod tests {
     use crate::rpc::self_limiter::SelfRateLimiter;
     use crate::rpc::{Ping, Protocol, RequestType};
     use crate::service::api_types::RequestId;
+    use crate::types::ForkContext;
     use libp2p::PeerId;
     use slog::{o, Drain};
+    use std::sync::Arc;
     use std::time::Duration;
-    use types::preset::Mainnet;
+    use types::nonstandard::Phase;
+    use types::{config::Config, preset::Mainnet};
 
     pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
         let decorator = slog_term::TermDecorator::new().build();
@@ -238,8 +248,10 @@ mod tests {
             ping_quota: Quota::n_every(1, 2),
             ..Default::default()
         });
+        let chain_config = Arc::new(Config::mainnet().rapid_upgrade());
+        let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(&chain_config, Phase::Phase0));
         let mut limiter: SelfRateLimiter<RequestId<u64>, Mainnet> =
-            SelfRateLimiter::new(config, log).unwrap();
+            SelfRateLimiter::new(config, fork_context, log).unwrap();
         let peer_id = PeerId::random();
 
         for i in 1..=5 {

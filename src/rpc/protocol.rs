@@ -1,6 +1,6 @@
 use super::methods::*;
 use crate::rpc::codec::SSZSnappyInboundCodec;
-use crate::types::ForkContext;
+use crate::types::{ForkContext, RequestError};
 use futures::future::BoxFuture;
 use futures::prelude::{AsyncRead, AsyncWrite};
 use futures::{FutureExt, StreamExt};
@@ -436,7 +436,7 @@ impl AsRef<str> for ProtocolId {
 
 impl ProtocolId {
     /// Returns min and max size for messages of given protocol id requests.
-    pub fn rpc_request_limits(&self, chain_config: &ChainConfig) -> RpcLimits {
+    pub fn rpc_request_limits(&self, chain_config: &ChainConfig, phase: Phase) -> RpcLimits {
         match self.versioned_protocol.protocol() {
             Protocol::Status => {
                 RpcLimits::new(StatusMessage::SIZE.get(), StatusMessage::SIZE.get())
@@ -459,7 +459,9 @@ impl ProtocolId {
             ),
             Protocol::BlobsByRoot => RpcLimits::new(
                 0,
-                chain_config.max_request_blob_sidecars_electra as usize
+                chain_config
+                    .max_request_blob_sidecars(phase)
+                    .unwrap_or_default() as usize
                     * BlobIdentifier::SIZE.get(),
             ),
             Protocol::DataColumnsByRoot => RpcLimits::new(
@@ -495,8 +497,10 @@ impl ProtocolId {
             Protocol::BlocksByRoot => rpc_block_limits_by_fork(fork_context.current_fork()),
             Protocol::BlobsByRange => rpc_blob_limits::<P>(),
             Protocol::BlobsByRoot => rpc_blob_limits::<P>(),
-            Protocol::DataColumnsByRoot => rpc_data_column_limits::<P>(),
-            Protocol::DataColumnsByRange => rpc_data_column_limits::<P>(),
+            Protocol::DataColumnsByRoot => rpc_data_column_limits::<P>(fork_context.current_fork()),
+            Protocol::DataColumnsByRange => {
+                rpc_data_column_limits::<P>(fork_context.current_fork())
+            }
             Protocol::Ping => RpcLimits::new(Ping::SIZE.get(), Ping::SIZE.get()),
             Protocol::MetaData => RpcLimits::new(MetaDataV1::SIZE.get(), MetaDataV3::SIZE.get()),
             Protocol::LightClientBootstrap => {
@@ -653,13 +657,13 @@ impl<P: Preset> RequestType<P> {
     /* These functions are used in the handler for stream management */
 
     /// Maximum number of responses expected for this request.
-    pub fn max_responses(&self) -> u64 {
+    pub fn max_responses(&self, current_phase: Phase) -> u64 {
         match self {
             RequestType::Status(_) => 1,
             RequestType::Goodbye(_) => 0,
             RequestType::BlocksByRange(req) => req.count(),
             RequestType::BlocksByRoot(req) => req.len() as u64,
-            RequestType::BlobsByRange(req) => req.max_blobs_requested::<P>(),
+            RequestType::BlobsByRange(req) => req.max_blobs_requested::<P>(current_phase),
             RequestType::BlobsByRoot(req) => req.blob_ids.len() as u64,
             RequestType::DataColumnsByRoot(req) => req.data_column_ids.len() as u64,
             RequestType::DataColumnsByRange(req) => req.max_requested::<P>(),
@@ -873,6 +877,12 @@ impl From<io::Error> for RPCError {
     }
 }
 
+impl From<RequestError> for RPCError {
+    fn from(request_error: RequestError) -> Self {
+        RPCError::IoError(request_error.to_string())
+    }
+}
+
 // Error trait is required for `ProtocolsHandler`
 impl std::fmt::Display for RPCError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -903,7 +913,7 @@ pub fn rpc_blob_limits<P: Preset>() -> RpcLimits {
     RpcLimits::new(BLOB_SIDECAR_MIN, BLOB_SIDECAR_MAX)
 }
 
-pub fn rpc_data_column_limits<P: Preset>() -> RpcLimits {
+pub fn rpc_data_column_limits<P: Preset>(_phase: Phase) -> RpcLimits {
     RpcLimits::new(*DATA_COLUMN_MIN, *DATA_COLUMN_MAX)
 }
 

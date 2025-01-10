@@ -856,7 +856,7 @@ where
         }
 
         let (req, substream) = substream;
-        let max_responses = req.max_responses();
+        let max_responses = req.max_responses(self.fork_context.current_fork());
 
         // store requests that expect responses
         if max_responses > 0 {
@@ -925,7 +925,7 @@ where
         }
 
         // add the stream to substreams if we expect a response, otherwise drop the stream.
-        let max_responses = request.max_responses();
+        let max_responses = request.max_responses(self.fork_context.current_fork());
         if max_responses > 0 {
             let max_remaining_chunks = if request.expect_exactly_one_response() {
                 // Currently enforced only for multiple responses

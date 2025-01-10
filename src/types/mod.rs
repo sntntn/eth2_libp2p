@@ -7,12 +7,22 @@ mod sync_state;
 mod topics;
 
 use ssz::BitVector;
-use types::{altair::consts::SyncCommitteeSubnetCount, phase0::consts::AttestationSubnetCount};
+use thiserror::Error;
+use types::{
+    altair::consts::SyncCommitteeSubnetCount, nonstandard::Phase,
+    phase0::consts::AttestationSubnetCount,
+};
 
 pub type EnrAttestationBitfield = BitVector<AttestationSubnetCount>;
 pub type EnrSyncCommitteeBitfield = BitVector<SyncCommitteeSubnetCount>;
 
 pub type Enr = discv5::enr::Enr<discv5::enr::CombinedKey>;
+
+#[derive(Debug, Error)]
+pub enum RequestError {
+    #[error("cannot request {protocol} at {phase}")]
+    InvalidPhaseRequest { protocol: String, phase: Phase },
+}
 
 pub use enr_fork_id::EnrForkId;
 pub use fork_context::ForkContext;

@@ -3,7 +3,7 @@ use crate::rpc::protocol::{
     Encoding, ProtocolId, RPCError, SupportedProtocol, ERROR_TYPE_MAX, ERROR_TYPE_MIN,
 };
 use crate::rpc::RequestType;
-use crate::types::ForkContext;
+use crate::types::{ForkContext, RequestError};
 use libp2p::bytes::BufMut;
 use libp2p::bytes::BytesMut;
 use snap::read::FrameDecoder;
@@ -194,7 +194,10 @@ impl<P: Preset> Decoder for SSZSnappyInboundCodec<P> {
 
         // Should not attempt to decode rpc chunks with `length > max_packet_size` or not within bounds of
         // packet size for ssz container corresponding to `self.protocol`.
-        let ssz_limits = self.protocol.rpc_request_limits(&self.chain_config);
+        let ssz_limits = self
+            .protocol
+            .rpc_request_limits(&self.chain_config, self.fork_context.current_fork());
+
         if ssz_limits.is_out_of_bounds(length, self.max_packet_size) {
             return Err(RPCError::InvalidData(format!(
                 "RPC request length for protocol {:?} is out of bounds, length {}",
@@ -219,6 +222,7 @@ impl<P: Preset> Decoder for SSZSnappyInboundCodec<P> {
                     &self.chain_config,
                     self.protocol.versioned_protocol,
                     &decoded_buffer,
+                    self.fork_context.current_fork(),
                 )
             }
             Err(e) => handle_error(e, reader.get_ref().get_ref().position(), max_compressed_len),
@@ -652,6 +656,7 @@ fn handle_rpc_request<P: Preset>(
     config: &ChainConfig,
     versioned_protocol: SupportedProtocol,
     decoded_buffer: &[u8],
+    current_phase: Phase,
 ) -> Result<Option<RequestType<P>>, RPCError> {
     match versioned_protocol {
         SupportedProtocol::StatusV1 => Ok(Some(RequestType::Status(
@@ -673,7 +678,7 @@ fn handle_rpc_request<P: Preset>(
         SupportedProtocol::BlocksByRootV2 => Ok(Some(RequestType::BlocksByRoot(
             BlocksByRootRequest::V2(BlocksByRootRequestV2 {
                 block_roots: DynamicList::from_ssz(
-                    &(config.max_request_blocks(Phase::Phase0) as usize),
+                    &(config.max_request_blocks(current_phase) as usize),
                     decoded_buffer,
                 )?,
             }),
@@ -681,18 +686,51 @@ fn handle_rpc_request<P: Preset>(
         SupportedProtocol::BlocksByRootV1 => Ok(Some(RequestType::BlocksByRoot(
             BlocksByRootRequest::V1(BlocksByRootRequestV1 {
                 block_roots: DynamicList::from_ssz(
-                    &(config.max_request_blocks(Phase::Phase0) as usize),
+                    &(config.max_request_blocks(current_phase) as usize),
                     decoded_buffer,
                 )?,
             }),
         ))),
-        SupportedProtocol::BlobsByRangeV1 => Ok(Some(RequestType::BlobsByRange(
-            BlobsByRangeRequest::from_ssz_default(decoded_buffer)?,
-        ))),
+        SupportedProtocol::BlobsByRangeV1 => {
+            let req = BlobsByRangeRequest::from_ssz_default(decoded_buffer)?;
+            let max_requested_blobs =
+                req.count
+                    .saturating_mul(current_phase.max_blobs_per_block::<P>().ok_or_else(|| {
+                        RequestError::InvalidPhaseRequest {
+                            protocol: "SupportedProtocol::BlobsByRangeV1".to_string(),
+                            phase: current_phase,
+                        }
+                    })?);
+
+            let max_allowed_blobs =
+                config
+                    .max_request_blob_sidecars(current_phase)
+                    .ok_or_else(|| RequestError::InvalidPhaseRequest {
+                        protocol: "SupportedProtocol::BlobsByRangeV1".to_string(),
+                        phase: current_phase,
+                    })?;
+
+            if max_requested_blobs > max_allowed_blobs {
+                return Err(RPCError::ErrorResponse(
+                    RpcErrorResponse::InvalidRequest,
+                    format!(
+                        "requested exceeded limit. allowed: {}, requested: {}",
+                        max_allowed_blobs, max_requested_blobs
+                    ),
+                ));
+            }
+
+            Ok(Some(RequestType::BlobsByRange(req)))
+        }
         SupportedProtocol::BlobsByRootV1 => {
             Ok(Some(RequestType::BlobsByRoot(BlobsByRootRequest {
                 blob_ids: DynamicList::from_ssz(
-                    &(config.max_request_blob_sidecars_electra as usize),
+                    &(config
+                        .max_request_blob_sidecars(current_phase)
+                        .ok_or_else(|| RequestError::InvalidPhaseRequest {
+                            protocol: "SupportedProtocol::BlobsByRootV1".to_string(),
+                            phase: current_phase,
+                        })? as usize),
                     decoded_buffer,
                 )?,
             })))
@@ -2082,8 +2120,6 @@ mod tests {
             RequestType::BlocksByRoot(bbroot_request_v1(&config, Phase::Phase0)),
             RequestType::BlocksByRoot(bbroot_request_v2(&config, Phase::Phase0)),
             RequestType::MetaData(MetadataRequest::new_v1()),
-            RequestType::BlobsByRange(blbrange_request()),
-            RequestType::BlobsByRoot(blbroot_request()),
             RequestType::DataColumnsByRange(dcbrange_request()),
             RequestType::DataColumnsByRoot(dcbroot_request()),
             RequestType::MetaData(MetadataRequest::new_v2()),
@@ -2091,6 +2127,16 @@ mod tests {
         ];
         for req in requests.iter() {
             for fork_name in enum_iterator::all::<Phase>() {
+                encode_then_decode_request(&config, req.clone(), fork_name);
+            }
+        }
+
+        let requests: &[RequestType<Mainnet>] = &[
+            RequestType::BlobsByRange(blbrange_request()),
+            RequestType::BlobsByRoot(blbroot_request()),
+        ];
+        for req in requests.iter() {
+            for fork_name in enum_iterator::all::<Phase>().filter(|phase| *phase > Phase::Capella) {
                 encode_then_decode_request(&config, req.clone(), fork_name);
             }
         }
@@ -2378,7 +2424,7 @@ mod tests {
         ));
 
         // Request limits
-        let limit = protocol_id.rpc_request_limits(&config);
+        let limit = protocol_id.rpc_request_limits(&config, Phase::Deneb);
         let mut max = encode_len(limit.max + 1);
         let mut codec = SSZSnappyOutboundCodec::<Mainnet>::new(
             protocol_id.clone(),

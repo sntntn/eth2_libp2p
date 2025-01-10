@@ -1,14 +1,17 @@
 use super::config::RateLimiterConfig;
 use crate::rpc::Protocol;
+use crate::types::ForkContext;
 use fnv::FnvHashMap;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::time::Interval;
+use types::nonstandard::Phase;
 use types::preset::Preset;
 
 /// Nanoseconds since a given time.
@@ -109,6 +112,7 @@ pub struct RPCRateLimiter {
     lc_finality_update_rl: Limiter<PeerId>,
     /// LightClientUpdatesByRange rate limiter.
     lc_updates_by_range_rl: Limiter<PeerId>,
+    fork_context: Arc<ForkContext>,
 }
 
 /// Error type for non conformant requests
@@ -176,7 +180,7 @@ impl RPCRateLimiterBuilder {
         self
     }
 
-    pub fn build(self) -> Result<RPCRateLimiter, &'static str> {
+    pub fn build(self, fork_context: Arc<ForkContext>) -> Result<RPCRateLimiter, &'static str> {
         // get our quotas
         let ping_quota = self.ping_quota.ok_or("Ping quota not specified")?;
         let metadata_quota = self.metadata_quota.ok_or("MetaData quota not specified")?;
@@ -253,13 +257,14 @@ impl RPCRateLimiterBuilder {
             lc_finality_update_rl,
             lc_updates_by_range_rl,
             init_time: Instant::now(),
+            fork_context,
         })
     }
 }
 
 pub trait RateLimiterItem {
     fn protocol(&self) -> Protocol;
-    fn max_responses(&self) -> u64;
+    fn max_responses(&self, current_phase: Phase) -> u64;
 }
 
 impl<P: Preset> RateLimiterItem for super::RequestType<P> {
@@ -267,13 +272,16 @@ impl<P: Preset> RateLimiterItem for super::RequestType<P> {
         self.versioned_protocol().protocol()
     }
 
-    fn max_responses(&self) -> u64 {
-        self.max_responses()
+    fn max_responses(&self, current_phase: Phase) -> u64 {
+        self.max_responses(current_phase)
     }
 }
 
 impl RPCRateLimiter {
-    pub fn new_with_config(config: RateLimiterConfig) -> Result<Self, &'static str> {
+    pub fn new_with_config(
+        config: RateLimiterConfig,
+        fork_context: Arc<ForkContext>,
+    ) -> Result<Self, &'static str> {
         // Destructure to make sure every configuration value is used.
         let RateLimiterConfig {
             ping_quota,
@@ -316,7 +324,7 @@ impl RPCRateLimiter {
                 Protocol::LightClientUpdatesByRange,
                 light_client_updates_by_range_quota,
             )
-            .build()
+            .build(fork_context)
     }
 
     /// Get a builder instance.
@@ -330,7 +338,9 @@ impl RPCRateLimiter {
         request: &Item,
     ) -> Result<(), RateLimitedErr> {
         let time_since_start = self.init_time.elapsed();
-        let tokens = request.max_responses().max(1);
+        let tokens = request
+            .max_responses(self.fork_context.current_fork())
+            .max(1);
 
         let check =
             |limiter: &mut Limiter<PeerId>| limiter.allows(time_since_start, peer_id, tokens);

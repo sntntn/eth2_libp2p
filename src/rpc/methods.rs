@@ -1,7 +1,7 @@
 //! Available RPC methods types and ids.
 use std::fmt::Display;
 
-use crate::types::{EnrAttestationBitfield, EnrSyncCommitteeBitfield};
+use crate::types::{EnrAttestationBitfield, EnrSyncCommitteeBitfield, RequestError};
 use anyhow::Result;
 use regex::bytes::Regex;
 use serde::Serialize;
@@ -366,8 +366,9 @@ pub struct BlobsByRangeRequest {
 }
 
 impl BlobsByRangeRequest {
-    pub fn max_blobs_requested<P: Preset>(&self) -> u64 {
-        self.count.saturating_mul(P::MaxBlobsPerBlockElectra::U64)
+    pub fn max_blobs_requested<P: Preset>(&self, phase: Phase) -> u64 {
+        self.count
+            .saturating_mul(phase.max_blobs_per_block::<P>().unwrap_or_default())
     }
 }
 
@@ -644,14 +645,20 @@ pub struct BlobsByRootRequest {
 impl BlobsByRootRequest {
     pub fn new(
         config: &ChainConfig,
+        phase: Phase,
         blob_identifiers: impl Iterator<Item = BlobIdentifier>,
-    ) -> Self {
+    ) -> Result<Self> {
         let blob_ids = DynamicList::from_iter_with_maximum(
             blob_identifiers,
-            config.max_request_blob_sidecars_electra as usize,
+            config.max_request_blob_sidecars(phase).ok_or_else(|| {
+                RequestError::InvalidPhaseRequest {
+                    protocol: "blobs_by_root".to_owned(),
+                    phase,
+                }
+            })? as usize,
         );
 
-        Self { blob_ids }
+        Ok(Self { blob_ids })
     }
 }
 
