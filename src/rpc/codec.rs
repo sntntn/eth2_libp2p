@@ -1202,9 +1202,7 @@ mod tests {
     }
 
     /// Bellatrix block with length < max_rpc_size.
-    fn bellatrix_block_small<P: Preset>(
-        fork_context: &ForkContext,
-    ) -> BellatrixSignedBeaconBlock<P> {
+    fn bellatrix_block_small<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
         let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
         let txs =
             Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(5000)).unwrap());
@@ -1223,19 +1221,14 @@ mod tests {
             ..BellatrixSignedBeaconBlock::default()
         };
 
-        assert!(
-            block.to_ssz().unwrap().len()
-                <= max_rpc_size(fork_context, Config::mainnet().max_chunk_size)
-        );
+        assert!(block.to_ssz().unwrap().len() <= Config::mainnet().max_payload_size);
         block
     }
 
     /// Bellatrix block with length > MAX_RPC_SIZE.
     /// The max limit for a merge block is in the order of ~16GiB which wouldn't fit in memory.
     /// Hence, we generate a merge block just greater than `MAX_RPC_SIZE` to test rejection on the rpc layer.
-    fn bellatrix_block_large<P: Preset>(
-        fork_context: &ForkContext,
-    ) -> BellatrixSignedBeaconBlock<P> {
+    fn bellatrix_block_large<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
         let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
         let txs =
             Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(100000)).unwrap());
@@ -1254,10 +1247,7 @@ mod tests {
             ..BellatrixSignedBeaconBlock::default()
         };
 
-        assert!(
-            block.to_ssz().unwrap().len()
-                > max_rpc_size(fork_context, Config::mainnet().max_chunk_size)
-        );
+        assert!(block.to_ssz().unwrap().len() > Config::mainnet().max_payload_size);
         block
     }
 
@@ -1358,13 +1348,12 @@ mod tests {
     ) -> Result<BytesMut, RPCError> {
         let snappy_protocol_id = ProtocolId::new(protocol, Encoding::SSZSnappy);
         let fork_context = Arc::new(ForkContext::dummy::<P>(config, fork_name));
-        let max_packet_size = max_rpc_size(&fork_context, config.max_chunk_size);
 
         let mut buf = BytesMut::new();
         let mut snappy_inbound_codec = SSZSnappyInboundCodec::<P>::new(
             config.clone_arc(),
             snappy_protocol_id,
-            max_packet_size,
+            config.max_payload_size,
             fork_context,
         );
 
@@ -1411,9 +1400,12 @@ mod tests {
         let snappy_protocol_id = ProtocolId::new(protocol, Encoding::SSZSnappy);
         let fork_context = Arc::new(ForkContext::dummy::<P>(config, fork_name));
 
-        let max_packet_size = max_rpc_size(&fork_context, config.max_chunk_size);
-        let mut snappy_outbound_codec =
-            SSZSnappyOutboundCodec::<P>::new(snappy_protocol_id, max_packet_size, fork_context);
+        let mut snappy_outbound_codec = SSZSnappyOutboundCodec::<P>::new(
+            snappy_protocol_id,
+            config.max_payload_size,
+            fork_context,
+        );
+
         // decode message just as snappy message
         snappy_outbound_codec.decode_response(message)
     }
@@ -1436,13 +1428,12 @@ mod tests {
         fork_name: Phase,
     ) {
         let fork_context = Arc::new(ForkContext::dummy::<P>(config, fork_name));
-        let max_packet_size = max_rpc_size(&fork_context, config.max_chunk_size);
         let protocol = ProtocolId::new(req.versioned_protocol(), Encoding::SSZSnappy);
         // Encode a request we send
         let mut buf = BytesMut::new();
         let mut outbound_codec = SSZSnappyOutboundCodec::<P>::new(
             protocol.clone(),
-            max_packet_size,
+            config.max_payload_size,
             fork_context.clone(),
         );
         outbound_codec.encode(req.clone(), &mut buf).unwrap();
@@ -1450,7 +1441,7 @@ mod tests {
         let mut inbound_codec = SSZSnappyInboundCodec::<P>::new(
             config.clone_arc(),
             protocol.clone(),
-            max_packet_size,
+            config.max_payload_size,
             fork_context.clone(),
         );
 
@@ -1770,9 +1761,8 @@ mod tests {
             ))))
         );
 
-        let fork_context = ForkContext::dummy::<Mainnet>(&config, Phase::Bellatrix);
-        let bellatrix_block_small = bellatrix_block_small::<Mainnet>(&fork_context);
-        let bellatrix_block_large = bellatrix_block_large::<Mainnet>(&fork_context);
+        let bellatrix_block_small = bellatrix_block_small::<Mainnet>();
+        let bellatrix_block_large = bellatrix_block_large::<Mainnet>();
 
         assert_eq!(
             encode_then_decode_response::<Mainnet>(
@@ -2297,7 +2287,7 @@ mod tests {
 
         // Insert length-prefix
         uvi_codec
-            .encode(Config::default().max_chunk_size + 1, &mut dst)
+            .encode(Config::default().max_payload_size + 1, &mut dst)
             .unwrap();
 
         // Insert snappy stream identifier
@@ -2336,7 +2326,7 @@ mod tests {
 
         let mut snappy_outbound_codec = SSZSnappyOutboundCodec::<Mainnet>::new(
             snappy_protocol_id,
-            max_rpc_size(&fork_context, config.max_chunk_size),
+            config.max_payload_size,
             fork_context,
         );
 
@@ -2371,7 +2361,7 @@ mod tests {
 
         let mut snappy_outbound_codec = SSZSnappyOutboundCodec::<Mainnet>::new(
             snappy_protocol_id,
-            max_rpc_size(&fork_context, config.max_chunk_size),
+            config.max_payload_size,
             fork_context,
         );
 
@@ -2399,12 +2389,11 @@ mod tests {
         let config = Arc::new(Config::mainnet().rapid_upgrade());
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(&config, Phase::Phase0));
 
-        let max_rpc_size = max_rpc_size(&fork_context, config.max_chunk_size);
         let limit = protocol_id.rpc_response_limits::<Mainnet>(&fork_context);
         let mut max = encode_len(limit.max + 1);
         let mut codec = SSZSnappyOutboundCodec::<Mainnet>::new(
             protocol_id.clone(),
-            max_rpc_size,
+            config.max_payload_size,
             fork_context.clone(),
         );
         assert!(matches!(
@@ -2415,7 +2404,7 @@ mod tests {
         let mut min = encode_len(limit.min - 1);
         let mut codec = SSZSnappyOutboundCodec::<Mainnet>::new(
             protocol_id.clone(),
-            max_rpc_size,
+            config.max_payload_size,
             fork_context.clone(),
         );
         assert!(matches!(
@@ -2428,7 +2417,7 @@ mod tests {
         let mut max = encode_len(limit.max + 1);
         let mut codec = SSZSnappyOutboundCodec::<Mainnet>::new(
             protocol_id.clone(),
-            max_rpc_size,
+            config.max_payload_size,
             fork_context.clone(),
         );
         assert!(matches!(
@@ -2437,8 +2426,11 @@ mod tests {
         ));
 
         let mut min = encode_len(limit.min - 1);
-        let mut codec =
-            SSZSnappyOutboundCodec::<Mainnet>::new(protocol_id, max_rpc_size, fork_context);
+        let mut codec = SSZSnappyOutboundCodec::<Mainnet>::new(
+            protocol_id,
+            config.max_payload_size,
+            fork_context,
+        );
         assert!(matches!(
             codec.decode_response(&mut min).unwrap_err(),
             RPCError::InvalidData(_)

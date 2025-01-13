@@ -21,7 +21,6 @@ pub mod types;
 #[cfg(test)]
 mod factory;
 
-pub use config::gossip_max_size;
 use libp2p::swarm::DialError;
 pub use listen_addr::*;
 

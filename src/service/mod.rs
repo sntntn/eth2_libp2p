@@ -247,7 +247,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
 
         let gossipsub_config_params = GossipsubConfigParams {
             message_domain_valid_snappy: chain_config.message_domain_valid_snappy.into(),
-            gossip_max_size: chain_config.gossip_max_size,
+            gossip_max_size: chain_config.max_payload_size,
         };
 
         let gs_config = gossipsub_config(
@@ -384,7 +384,7 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
         };
 
         let network_params = NetworkParams {
-            max_chunk_size: chain_config.max_chunk_size,
+            max_chunk_size: chain_config.max_payload_size,
             ttfb_timeout: Duration::from_secs(chain_config.ttfb_timeout),
             resp_timeout: Duration::from_secs(chain_config.resp_timeout),
         };

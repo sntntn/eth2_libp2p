@@ -70,17 +70,6 @@ const PROTOCOL_PREFIX: &str = "/eth2/beacon_chain/req";
 /// established before the stream is terminated.
 const REQUEST_TIMEOUT: u64 = 15;
 
-/// Returns the maximum bytes that can be sent across the RPC.
-pub fn max_rpc_size(fork_context: &ForkContext, max_chunk_size: usize) -> usize {
-    match fork_context.current_fork() {
-        Phase::Altair | Phase::Phase0 => max_chunk_size / 10,
-        Phase::Bellatrix => max_chunk_size,
-        Phase::Capella => max_chunk_size,
-        Phase::Deneb => max_chunk_size,
-        Phase::Electra => max_chunk_size,
-    }
-}
-
 /// Returns the rpc limits for beacon_block_by_range and beacon_block_by_root responses.
 ///
 /// Note: This function should take care to return the min/max limits accounting for all

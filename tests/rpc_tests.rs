@@ -1,8 +1,7 @@
 #![cfg(test)]
 use common::Protocol;
 use eth2_libp2p::rpc::{methods::*, RequestType};
-use eth2_libp2p::types::ForkContext;
-use eth2_libp2p::{rpc::max_rpc_size, NetworkEvent, ReportSource, Response};
+use eth2_libp2p::{NetworkEvent, ReportSource, Response};
 use slog::{debug, warn, Level};
 use ssz::{ByteList, ContiguousList, SszReadDefault as _, SszWrite as _};
 use std::sync::Arc;
@@ -28,7 +27,7 @@ mod common;
 mod factory;
 
 /// Bellatrix block with length < max_rpc_size.
-fn bellatrix_block_small<P: Preset>(fork_context: &ForkContext) -> BellatrixSignedBeaconBlock<P> {
+fn bellatrix_block_small<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
     let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
     let txs = Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(5000)).unwrap());
 
@@ -46,17 +45,14 @@ fn bellatrix_block_small<P: Preset>(fork_context: &ForkContext) -> BellatrixSign
         ..BellatrixSignedBeaconBlock::default()
     };
 
-    assert!(
-        block.to_ssz().unwrap().len()
-            <= max_rpc_size(fork_context, Config::default().max_chunk_size)
-    );
+    assert!(block.to_ssz().unwrap().len() <= Config::default().max_payload_size);
     block
 }
 
 /// Bellatrix block with length > MAX_RPC_SIZE.
 /// The max limit for a merge block is in the order of ~16GiB which wouldn't fit in memory.
 /// Hence, we generate a merge block just greater than `MAX_RPC_SIZE` to test rejection on the rpc layer.
-fn bellatrix_block_large<P: Preset>(fork_context: &ForkContext) -> BellatrixSignedBeaconBlock<P> {
+fn bellatrix_block_large<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
     let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
     let txs = Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(100000)).unwrap());
 
@@ -74,10 +70,7 @@ fn bellatrix_block_large<P: Preset>(fork_context: &ForkContext) -> BellatrixSign
         ..BellatrixSignedBeaconBlock::default()
     };
 
-    assert!(
-        block.to_ssz().unwrap().len()
-            > max_rpc_size(fork_context, Config::default().max_chunk_size)
-    );
+    assert!(block.to_ssz().unwrap().len() > Config::default().max_payload_size);
     block
 }
 
@@ -209,13 +202,7 @@ async fn test_tcp_blocks_by_range_chunked_rpc() {
 
     let signed_full_block = factory::full_altair_signed_beacon_block().into();
     let rpc_response_altair = Response::BlocksByRange(Some(Arc::new(signed_full_block)));
-
-    let signed_full_block = bellatrix_block_small(&ForkContext::dummy::<Mainnet>(
-        &Config::mainnet().rapid_upgrade().into(),
-        Phase::Bellatrix,
-    ))
-    .into();
-
+    let signed_full_block = bellatrix_block_small().into();
     let rpc_response_merge_small = Response::BlocksByRange(Some(Arc::new(signed_full_block)));
 
     // keep count of the number of messages received
@@ -452,15 +439,10 @@ async fn test_tcp_blocks_by_range_over_limit() {
     .await;
 
     // BlocksByRange Response
-    let signed_full_block = bellatrix_block_large(&ForkContext::dummy::<Mainnet>(
-        &Config::mainnet().rapid_upgrade().into(),
-        Phase::Bellatrix,
-    ))
-    .into();
-
+    let signed_full_block = bellatrix_block_large().into();
     let rpc_response_merge_large = Response::BlocksByRange(Some(Arc::new(signed_full_block)));
-
     let request_id = messages_to_send as usize;
+
     // build the sender future
     let sender_future = async {
         loop {
@@ -789,12 +771,7 @@ async fn test_tcp_blocks_by_root_chunked_rpc() {
 
     let signed_full_block = factory::full_altair_signed_beacon_block().into();
     let rpc_response_altair = Response::BlocksByRoot(Some(Arc::new(signed_full_block)));
-
-    let signed_full_block = bellatrix_block_small::<Mainnet>(&ForkContext::dummy::<Mainnet>(
-        &Config::mainnet().rapid_upgrade().into(),
-        Phase::Bellatrix,
-    ))
-    .into();
+    let signed_full_block = bellatrix_block_small::<Mainnet>().into();
     let rpc_response_merge_small = Response::BlocksByRoot(Some(Arc::new(signed_full_block)));
 
     // keep count of the number of messages received

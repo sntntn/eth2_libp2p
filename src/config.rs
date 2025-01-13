@@ -21,15 +21,6 @@ pub const DEFAULT_DISC_PORT: u16 = 9000u16;
 pub const DEFAULT_QUIC_PORT: u16 = 9001u16;
 pub const DEFAULT_IDONTWANT_MESSAGE_SIZE_THRESHOLD: usize = 1000usize;
 
-/// The maximum size of gossip messages.
-pub fn gossip_max_size(is_merge_enabled: bool, gossip_max_size: usize) -> usize {
-    if is_merge_enabled {
-        gossip_max_size
-    } else {
-        gossip_max_size / 10
-    }
-}
-
 pub struct GossipsubConfigParams {
     pub message_domain_valid_snappy: [u8; 4],
     pub gossip_max_size: usize,
@@ -478,7 +469,6 @@ pub fn gossipsub_config(
         }
     }
     let message_domain_valid_snappy = gossipsub_config_params.message_domain_valid_snappy;
-    let is_bellatrix_enabled = fork_context.fork_exists(Phase::Bellatrix);
     let gossip_message_id = move |message: &gossipsub::Message| {
         gossipsub::MessageId::from(
             &Sha256::digest(
@@ -497,10 +487,9 @@ pub fn gossipsub_config(
     let duplicate_cache_time = Duration::from_secs(slots_per_epoch * seconds_per_slot * 2);
 
     gossipsub::ConfigBuilder::default()
-        .max_transmit_size(gossip_max_size(
-            is_bellatrix_enabled,
+        .max_transmit_size(
             gossipsub_config_params.gossip_max_size,
-        ))
+        )
         .heartbeat_interval(load.heartbeat_interval)
         .mesh_n(load.mesh_n)
         .mesh_n_low(load.mesh_n_low)
