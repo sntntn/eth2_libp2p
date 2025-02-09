@@ -38,9 +38,6 @@ pub const SIGNED_BEACON_BLOCK_PHASE0_MIN: usize = 404;
 pub const SIGNED_BEACON_BLOCK_PHASE0_MAX: usize = 157756;
 pub const SIGNED_BEACON_BLOCK_ALTAIR_MAX: usize = 157916;
 pub const SIGNED_BEACON_BLOCK_BELLATRIX_MAX: usize = 1125899911195388;
-pub const SIGNED_BEACON_BLOCK_CAPELLA_MAX: usize = 1125899911199368;
-pub const SIGNED_BEACON_BLOCK_DENEB_MAX: usize = 1125899911199676;
-pub const SIGNED_BEACON_BLOCK_ELECTRA_MAX: usize = 1125899913301268;
 
 pub const BLOB_SIDECAR_MIN: usize = 131928;
 pub const BLOB_SIDECAR_MAX: usize = 131928;
@@ -84,21 +81,11 @@ pub fn rpc_block_limits_by_fork(current_fork: Phase) -> RpcLimits {
             SIGNED_BEACON_BLOCK_PHASE0_MIN, // Base block is smaller than altair blocks
             SIGNED_BEACON_BLOCK_ALTAIR_MAX, // Altair block is larger than base blocks
         ),
-        Phase::Bellatrix => RpcLimits::new(
+        // After the merge the max SSZ size of a block is absurdly big. The size is actually
+        // bound by other constants, so here we default to the bellatrix's max value
+        _ => RpcLimits::new(
             SIGNED_BEACON_BLOCK_PHASE0_MIN, // Base block is smaller than altair and merge blocks
             SIGNED_BEACON_BLOCK_BELLATRIX_MAX, // Merge block is larger than base and altair blocks
-        ),
-        Phase::Capella => RpcLimits::new(
-            SIGNED_BEACON_BLOCK_PHASE0_MIN, // Base block is smaller than altair and merge blocks
-            SIGNED_BEACON_BLOCK_CAPELLA_MAX, // Capella block is larger than base, altair and merge blocks
-        ),
-        Phase::Deneb => RpcLimits::new(
-            SIGNED_BEACON_BLOCK_PHASE0_MIN, // Base block is smaller than altair and merge blocks
-            SIGNED_BEACON_BLOCK_DENEB_MAX,  // EIP 4844 block is larger than all prior fork blocks
-        ),
-        Phase::Electra => RpcLimits::new(
-            SIGNED_BEACON_BLOCK_PHASE0_MIN, // Base block is smaller than altair and merge blocks
-            SIGNED_BEACON_BLOCK_ELECTRA_MAX, // Electra block is larger than Deneb block
         ),
     }
 }
