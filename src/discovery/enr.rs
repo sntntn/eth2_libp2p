@@ -8,6 +8,7 @@ use crate::types::{Enr, EnrAttestationBitfield, EnrForkId, EnrSyncCommitteeBitfi
 use crate::NetworkConfig;
 use alloy_rlp::bytes::Bytes;
 use anyhow::{anyhow, Result};
+use grandine_version::{APPLICATION_NAME, APPLICATION_VERSION};
 use libp2p::identity::Keypair;
 use slog::{debug, warn};
 use ssz::{SszReadDefault as _, SszWrite as _};
@@ -194,6 +195,15 @@ pub fn build_enr(
 
     if let Some(udp6_port) = config.enr_udp6_port {
         builder.udp6(udp6_port.get());
+    }
+
+    // Add EIP 7636 client information
+    if !config.private {
+        builder.client_info(
+            APPLICATION_NAME.to_string(),
+            APPLICATION_VERSION.to_string(),
+            None,
+        );
     }
 
     // Add QUIC fields to the ENR.
