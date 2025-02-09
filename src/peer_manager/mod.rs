@@ -64,6 +64,8 @@ pub const MIN_OUTBOUND_ONLY_FACTOR: f32 = 0.2;
 /// limit is 55, and we are at 55 peers, the following parameter provisions a few more slots of
 /// dialing priority peers we need for validator duties.
 pub const PRIORITY_PEER_EXCESS: f32 = 0.2;
+/// The numbre of inbound libp2p peers we have seen before we consider our NAT to be open.
+pub const LIBP2P_NAT_OPEN_THRESHOLD: usize = 3;
 
 /// The main struct that handles peer's reputation and connection status.
 pub struct PeerManager {
@@ -1308,7 +1310,10 @@ impl PeerManager {
     fn update_peer_count_metrics(&self) {
         let mut peers_connected = 0;
         let mut clients_per_peer = HashMap::new();
-        let mut peers_connected_mutli: HashMap<(&str, &str), i32> = HashMap::new();
+        let mut inbound_ipv4_peers_connected: usize = 0;
+        let mut inbound_ipv6_peers_connected: usize = 0;
+        let mut peers_connected_multi: HashMap<(&str, &str), i32> = HashMap::new();
+
         let mut peers_per_custody_subnet_count: HashMap<u64, i64> = HashMap::new();
 
         for (_, peer_info) in self.network_globals.peers.read().connected_peers() {
@@ -1337,7 +1342,7 @@ impl PeerManager {
                     })
                 })
                 .unwrap_or("unknown");
-            *peers_connected_mutli
+            *peers_connected_multi
                 .entry((direction, transport))
                 .or_default() += 1;
 
@@ -1346,6 +1351,29 @@ impl PeerManager {
                     .entry(meta_data.custody_subnet_count)
                     .or_default() += 1;
             }
+            // Check if incoming peer is ipv4
+            if peer_info.is_incoming_ipv4_connection() {
+                inbound_ipv4_peers_connected += 1;
+            }
+
+            // Check if incoming peer is ipv6
+            if peer_info.is_incoming_ipv6_connection() {
+                inbound_ipv6_peers_connected += 1;
+            }
+        }
+
+        // Set ipv4 nat_open metric flag if threshold of peercount is met, unset if below threshold
+        if inbound_ipv4_peers_connected >= LIBP2P_NAT_OPEN_THRESHOLD {
+            metrics::set_gauge_vec(&metrics::NAT_OPEN, &["libp2p_ipv4"], 1);
+        } else {
+            metrics::set_gauge_vec(&metrics::NAT_OPEN, &["libp2p_ipv4"], 0);
+        }
+
+        // Set ipv6 nat_open metric flag if threshold of peercount is met, unset if below threshold
+        if inbound_ipv6_peers_connected >= LIBP2P_NAT_OPEN_THRESHOLD {
+            metrics::set_gauge_vec(&metrics::NAT_OPEN, &["libp2p_ipv6"], 1);
+        } else {
+            metrics::set_gauge_vec(&metrics::NAT_OPEN, &["libp2p_ipv6"], 0);
         }
 
         // PEERS_CONNECTED
@@ -1376,7 +1404,7 @@ impl PeerManager {
                 metrics::set_gauge_vec(
                     &metrics::PEERS_CONNECTED_MULTI,
                     &[direction, transport],
-                    *peers_connected_mutli
+                    *peers_connected_multi
                         .get(&(direction, transport))
                         .unwrap_or(&0) as i64,
                 );
