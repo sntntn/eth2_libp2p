@@ -20,7 +20,10 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use types::{config::Config as ChainConfig, phase0::primitives::ForkDigest};
+use types::{
+    config::Config as ChainConfig,
+    phase0::{consts::FAR_FUTURE_EPOCH, primitives::ForkDigest},
+};
 
 pub const NETWORK_KEY_FILENAME: &str = "key";
 /// The filename to store our local metadata.
@@ -255,10 +258,9 @@ pub fn load_or_build_metadata(
 /// possible fork digests.
 pub(crate) fn create_whitelist_filter(
     possible_fork_digests: Vec<ForkDigest>,
+    chain_config: &ChainConfig,
     attestation_subnet_count: u64,
     sync_committee_subnet_count: u64,
-    blob_sidecar_subnet_count: u64,
-    data_column_sidecar_subnet_count: u64,
 ) -> gossipsub::WhitelistSubscriptionFilter {
     let mut possible_hashes = HashSet::new();
     for fork_digest in possible_fork_digests {
@@ -284,10 +286,15 @@ pub(crate) fn create_whitelist_filter(
         for id in 0..sync_committee_subnet_count {
             add(SyncCommitteeMessage(id));
         }
-        for id in 0..blob_sidecar_subnet_count {
+        let blob_subnet_count = if chain_config.electra_fork_epoch != FAR_FUTURE_EPOCH {
+            chain_config.blob_sidecar_subnet_count_electra.get()
+        } else {
+            chain_config.blob_sidecar_subnet_count.get()
+        };
+        for id in 0..blob_subnet_count {
             add(BlobSidecar(id));
         }
-        for id in 0..data_column_sidecar_subnet_count {
+        for id in 0..chain_config.data_column_sidecar_subnet_count {
             add(DataColumnSidecar(id));
         }
     }

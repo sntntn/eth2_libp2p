@@ -46,8 +46,6 @@ pub const ALTAIR_CORE_TOPICS: [GossipKind; 1] = [GossipKind::SignedContributionA
 
 pub const CAPELLA_CORE_TOPICS: [GossipKind; 1] = [GossipKind::BlsToExecutionChange];
 
-pub const DENEB_CORE_TOPICS: [GossipKind; 0] = [];
-
 pub const LIGHT_CLIENT_GOSSIP_TOPICS: [GossipKind; 2] = [
     GossipKind::LightClientFinalityUpdate,
     GossipKind::LightClientOptimisticUpdate,
@@ -66,17 +64,14 @@ pub fn fork_core_topics(chain_config: &ChainConfig, phase: &Phase) -> Vec<Gossip
             for i in 0..chain_config.blob_sidecar_subnet_count.get() {
                 deneb_blob_topics.push(GossipKind::BlobSidecar(i));
             }
-            let mut deneb_topics = DENEB_CORE_TOPICS.to_vec();
-            deneb_topics.append(&mut deneb_blob_topics);
-            deneb_topics
+            deneb_blob_topics
         }
         Phase::Electra => {
+            // All of electra blob topics are core topics
             let mut electra_blob_topics = Vec::new();
 
             for i in 0..chain_config.blob_sidecar_subnet_count_electra.get() {
-                if i >= chain_config.blob_sidecar_subnet_count.get() {
-                    electra_blob_topics.push(GossipKind::BlobSidecar(i));
-                }
+                electra_blob_topics.push(GossipKind::BlobSidecar(i));
             }
 
             electra_blob_topics
@@ -107,7 +102,12 @@ pub fn core_topics_to_subscribe(
         topics.extend(previous_phase_topics);
         current_phase = previous_phase;
     }
+    // Remove duplicates
     topics
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 /// A gossipsub topic which encapsulates the type of messages that should be sent and received over
@@ -482,10 +482,10 @@ mod tests {
         all_topics.extend(ALTAIR_CORE_TOPICS);
         all_topics.extend(BASE_CORE_TOPICS);
 
-        let latest_fork = enum_iterator::all().last().unwrap();
-        assert_eq!(
-            core_topics_to_subscribe(&chain_config, latest_fork),
-            all_topics
-        );
+        let core_topics = core_topics_to_subscribe(&chain_config, Phase::Electra);
+        // Need to check all the topics exist in an order independent manner
+        for topic in all_topics {
+            assert!(core_topics.contains(&topic));
+        }
     }
 }

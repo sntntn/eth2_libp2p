@@ -487,9 +487,7 @@ pub fn gossipsub_config(
     let duplicate_cache_time = Duration::from_secs(slots_per_epoch * seconds_per_slot * 2);
 
     gossipsub::ConfigBuilder::default()
-        .max_transmit_size(
-            gossipsub_config_params.gossip_max_size,
-        )
+        .max_transmit_size(gossipsub_config_params.gossip_max_size)
         .heartbeat_interval(load.heartbeat_interval)
         .mesh_n(load.mesh_n)
         .mesh_n_low(load.mesh_n_low)

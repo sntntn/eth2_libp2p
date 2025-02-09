@@ -17,8 +17,7 @@ use crate::rpc::{
 use crate::types::{
     attestation_sync_committee_topics, fork_core_topics, subnet_from_topic_hash, EnrForkId,
     ForkContext, GossipEncoding, GossipKind, GossipTopic, SnappyTransform, Subnet, SubnetDiscovery,
-    ALTAIR_CORE_TOPICS, BASE_CORE_TOPICS, CAPELLA_CORE_TOPICS, DENEB_CORE_TOPICS,
-    LIGHT_CLIENT_GOSSIP_TOPICS,
+    ALTAIR_CORE_TOPICS, BASE_CORE_TOPICS, CAPELLA_CORE_TOPICS, LIGHT_CLIENT_GOSSIP_TOPICS,
 };
 use crate::EnrExt;
 use crate::{metrics, Enr, NetworkGlobals, PubsubMessage, TopicHash};
@@ -308,32 +307,25 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             let update_gossipsub_scores = tokio::time::interval(params.decay_interval);
             let possible_fork_digests = ctx.fork_context.all_fork_digests();
 
-            let max_blob_sideacar_subnet_count = chain_config
-                .blob_sidecar_subnet_count
-                .get()
-                .max(chain_config.blob_sidecar_subnet_count_electra.get());
-
             let max_topics = AttestationSubnetCount::USIZE
                 + SyncCommitteeSubnetCount::USIZE
-                + max_blob_sideacar_subnet_count as usize
+                + chain_config.blob_sidecar_subnet_count_electra.get() as usize
                 + chain_config.data_column_sidecar_subnet_count as usize
                 + BASE_CORE_TOPICS.len()
                 + ALTAIR_CORE_TOPICS.len()
-                + CAPELLA_CORE_TOPICS.len()
-                + DENEB_CORE_TOPICS.len()
+                + CAPELLA_CORE_TOPICS.len() // 0 core deneb and electra topics
                 + LIGHT_CLIENT_GOSSIP_TOPICS.len();
 
             let filter = gossipsub::MaxCountSubscriptionFilter {
                 filter: utils::create_whitelist_filter(
                     possible_fork_digests,
+                    &chain_config,
                     AttestationSubnetCount::U64,
                     SyncCommitteeSubnetCount::U64,
-                    max_blob_sideacar_subnet_count,
-                    chain_config.data_column_sidecar_subnet_count,
                 ),
                 // during a fork we subscribe to both the old and new topics
                 max_subscribed_topics: max_topics * 4,
-                // 418 in theory = (64 attestation + 4 sync committee + 7 core topics + 6 blob topics + 128 column topics) * 2
+                // 424 in theory = (64 attestation + 4 sync committee + 7 core topics + 9 blob topics + 128 column topics) * 2
                 max_subscriptions_per_request: max_topics * 2,
             };
 
