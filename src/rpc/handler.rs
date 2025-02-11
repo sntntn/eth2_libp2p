@@ -856,6 +856,43 @@ where
         }
 
         let (req, substream) = substream;
+        let phase = self.fork_context.current_fork();
+        let chain_config = &self.fork_context.chain_config();
+
+        match &req {
+            RequestType::BlocksByRange(request) => {
+                let max_allowed = chain_config.max_request_blocks(phase);
+                if request.count() > max_allowed {
+                    self.events_out.push(HandlerEvent::Err(HandlerErr::Inbound {
+                        id: self.current_inbound_substream_id,
+                        proto: Protocol::BlocksByRange,
+                        error: RPCError::InvalidData(format!(
+                            "requested exceeded limit. allowed: {}, requested: {}",
+                            max_allowed,
+                            request.count()
+                        )),
+                    }));
+                    return self.shutdown(None);
+                }
+            }
+            RequestType::BlobsByRange(request) => {
+                let max_requested_blobs = request.max_blobs_requested::<P>(phase);
+                let max_allowed = chain_config.max_request_blob_sidecars(phase);
+                if max_requested_blobs > max_allowed {
+                    self.events_out.push(HandlerEvent::Err(HandlerErr::Inbound {
+                        id: self.current_inbound_substream_id,
+                        proto: Protocol::BlobsByRange,
+                        error: RPCError::InvalidData(format!(
+                            "requested exceeded limit. allowed: {}, requested: {}",
+                            max_allowed, max_requested_blobs
+                        )),
+                    }));
+                    return self.shutdown(None);
+                }
+            }
+            _ => {}
+        };
+
         let max_responses = req.max_responses(self.fork_context.current_fork());
 
         // store requests that expect responses

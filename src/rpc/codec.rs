@@ -691,26 +691,9 @@ fn handle_rpc_request<P: Preset>(
                 )?,
             }),
         ))),
-        SupportedProtocol::BlobsByRangeV1 => {
-            let req = BlobsByRangeRequest::from_ssz_default(decoded_buffer)?;
-            let max_requested_blobs = req
-                .count
-                .saturating_mul(current_phase.max_blobs_per_block::<P>());
-
-            let max_allowed_blobs = config.max_request_blob_sidecars(current_phase);
-
-            if max_requested_blobs > max_allowed_blobs {
-                return Err(RPCError::ErrorResponse(
-                    RpcErrorResponse::InvalidRequest,
-                    format!(
-                        "requested exceeded limit. allowed: {}, requested: {}",
-                        max_allowed_blobs, max_requested_blobs
-                    ),
-                ));
-            }
-
-            Ok(Some(RequestType::BlobsByRange(req)))
-        }
+        SupportedProtocol::BlobsByRangeV1 => Ok(Some(RequestType::BlobsByRange(
+            BlobsByRangeRequest::from_ssz_default(decoded_buffer)?,
+        ))),
         SupportedProtocol::BlobsByRootV1 => {
             Ok(Some(RequestType::BlobsByRoot(BlobsByRootRequest {
                 blob_ids: DynamicList::from_ssz(
@@ -2091,8 +2074,6 @@ mod tests {
             RequestType::Goodbye(GoodbyeReason::Fault),
             RequestType::BlocksByRange(bbrange_request_v1()),
             RequestType::BlocksByRange(bbrange_request_v2()),
-            RequestType::BlocksByRoot(bbroot_request_v1(&config, Phase::Phase0)),
-            RequestType::BlocksByRoot(bbroot_request_v2(&config, Phase::Phase0)),
             RequestType::MetaData(MetadataRequest::new_v1()),
             RequestType::DataColumnsByRange(dcbrange_request()),
             RequestType::DataColumnsByRoot(dcbroot_request()),
@@ -2111,6 +2092,21 @@ mod tests {
         ];
         for req in requests.iter() {
             for fork_name in enum_iterator::all::<Phase>().filter(|phase| *phase > Phase::Capella) {
+                encode_then_decode_request(&config, req.clone(), fork_name);
+            }
+        }
+
+        // Request types that have different length limits depending on the fork
+        // Handled separately to have consistent `Phase` across request and responses
+        let fork_dependent_requests = |phase| {
+            [
+                RequestType::BlocksByRoot(bbroot_request_v1(&config, phase)),
+                RequestType::BlocksByRoot(bbroot_request_v2(&config, phase)),
+            ]
+        };
+        for fork_name in enum_iterator::all::<Phase>() {
+            let requests: [RequestType<Mainnet>; 2] = fork_dependent_requests(fork_name);
+            for req in requests {
                 encode_then_decode_request(&config, req.clone(), fork_name);
             }
         }

@@ -51,7 +51,7 @@ use types::{
     config::Config as ChainConfig,
     nonstandard::Phase,
     phase0::{
-        consts::AttestationSubnetCount,
+        consts::{AttestationSubnetCount, FAR_FUTURE_EPOCH},
         primitives::{ForkDigest, Slot},
     },
     preset::Preset,
@@ -307,9 +307,16 @@ impl<AppReqId: ReqId, P: Preset> Network<AppReqId, P> {
             let update_gossipsub_scores = tokio::time::interval(params.decay_interval);
             let possible_fork_digests = ctx.fork_context.all_fork_digests();
 
+            let blob_sidecar_subnet_count_max =
+                if chain_config.electra_fork_epoch != FAR_FUTURE_EPOCH {
+                    chain_config.blob_sidecar_subnet_count_electra.get()
+                } else {
+                    chain_config.blob_sidecar_subnet_count.get()
+                };
+
             let max_topics = AttestationSubnetCount::USIZE
                 + SyncCommitteeSubnetCount::USIZE
-                + chain_config.blob_sidecar_subnet_count_electra.get() as usize
+                + blob_sidecar_subnet_count_max as usize
                 + chain_config.data_column_sidecar_subnet_count as usize
                 + BASE_CORE_TOPICS.len()
                 + ALTAIR_CORE_TOPICS.len()

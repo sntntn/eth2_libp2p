@@ -61,7 +61,7 @@ pub fn fork_core_topics(chain_config: &ChainConfig, phase: &Phase) -> Vec<Gossip
         Phase::Deneb => {
             // All of deneb blob topics are core topics
             let mut deneb_blob_topics = Vec::new();
-            for i in 0..chain_config.blob_sidecar_subnet_count.get() {
+            for i in 0..chain_config.blob_sidecar_subnet_count(Phase::Deneb).into() {
                 deneb_blob_topics.push(GossipKind::BlobSidecar(i));
             }
             deneb_blob_topics
@@ -70,7 +70,10 @@ pub fn fork_core_topics(chain_config: &ChainConfig, phase: &Phase) -> Vec<Gossip
             // All of electra blob topics are core topics
             let mut electra_blob_topics = Vec::new();
 
-            for i in 0..chain_config.blob_sidecar_subnet_count_electra.get() {
+            for i in 0..chain_config
+                .blob_sidecar_subnet_count(Phase::Electra)
+                .into()
+            {
                 electra_blob_topics.push(GossipKind::BlobSidecar(i));
             }
 
