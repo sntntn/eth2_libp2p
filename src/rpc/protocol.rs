@@ -1,6 +1,6 @@
 use super::methods::*;
 use crate::rpc::codec::SSZSnappyInboundCodec;
-use crate::types::{ForkContext, RequestError};
+use crate::types::ForkContext;
 use futures::future::BoxFuture;
 use futures::prelude::{AsyncRead, AsyncWrite};
 use futures::{FutureExt, StreamExt};
@@ -435,10 +435,7 @@ impl ProtocolId {
             ),
             Protocol::BlobsByRoot => RpcLimits::new(
                 0,
-                chain_config
-                    .max_request_blob_sidecars(phase)
-                    .unwrap_or_default() as usize
-                    * BlobIdentifier::SIZE.get(),
+                chain_config.max_request_blob_sidecars(phase) as usize * BlobIdentifier::SIZE.get(),
             ),
             Protocol::DataColumnsByRoot => RpcLimits::new(
                 0,
@@ -850,12 +847,6 @@ impl From<tokio::time::error::Elapsed> for RPCError {
 impl From<io::Error> for RPCError {
     fn from(err: io::Error) -> Self {
         RPCError::IoError(err.to_string())
-    }
-}
-
-impl From<RequestError> for RPCError {
-    fn from(request_error: RequestError) -> Self {
-        RPCError::IoError(request_error.to_string())
     }
 }
 

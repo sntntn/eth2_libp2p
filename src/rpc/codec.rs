@@ -3,7 +3,7 @@ use crate::rpc::protocol::{
     Encoding, ProtocolId, RPCError, SupportedProtocol, ERROR_TYPE_MAX, ERROR_TYPE_MIN,
 };
 use crate::rpc::RequestType;
-use crate::types::{ForkContext, RequestError};
+use crate::types::ForkContext;
 use libp2p::bytes::BufMut;
 use libp2p::bytes::BytesMut;
 use snap::read::FrameDecoder;
@@ -693,22 +693,11 @@ fn handle_rpc_request<P: Preset>(
         ))),
         SupportedProtocol::BlobsByRangeV1 => {
             let req = BlobsByRangeRequest::from_ssz_default(decoded_buffer)?;
-            let max_requested_blobs =
-                req.count
-                    .saturating_mul(current_phase.max_blobs_per_block::<P>().ok_or_else(|| {
-                        RequestError::InvalidPhaseRequest {
-                            protocol: "SupportedProtocol::BlobsByRangeV1".to_string(),
-                            phase: current_phase,
-                        }
-                    })?);
+            let max_requested_blobs = req
+                .count
+                .saturating_mul(current_phase.max_blobs_per_block::<P>());
 
-            let max_allowed_blobs =
-                config
-                    .max_request_blob_sidecars(current_phase)
-                    .ok_or_else(|| RequestError::InvalidPhaseRequest {
-                        protocol: "SupportedProtocol::BlobsByRangeV1".to_string(),
-                        phase: current_phase,
-                    })?;
+            let max_allowed_blobs = config.max_request_blob_sidecars(current_phase);
 
             if max_requested_blobs > max_allowed_blobs {
                 return Err(RPCError::ErrorResponse(
@@ -725,12 +714,7 @@ fn handle_rpc_request<P: Preset>(
         SupportedProtocol::BlobsByRootV1 => {
             Ok(Some(RequestType::BlobsByRoot(BlobsByRootRequest {
                 blob_ids: DynamicList::from_ssz(
-                    &(config
-                        .max_request_blob_sidecars(current_phase)
-                        .ok_or_else(|| RequestError::InvalidPhaseRequest {
-                            protocol: "SupportedProtocol::BlobsByRootV1".to_string(),
-                            phase: current_phase,
-                        })? as usize),
+                    &(config.max_request_blob_sidecars(current_phase) as usize),
                     decoded_buffer,
                 )?,
             })))

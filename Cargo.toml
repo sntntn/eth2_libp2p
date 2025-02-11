@@ -47,7 +47,6 @@ snap = { workspace = true }
 ssz = { workspace = true }
 std_ext = { workspace = true }
 strum = { workspace = true }
-thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
 tokio = { workspace = true }
 tokio-io-timeout = { workspace = true }
