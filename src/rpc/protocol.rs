@@ -630,13 +630,13 @@ impl<P: Preset> RequestType<P> {
     /* These functions are used in the handler for stream management */
 
     /// Maximum number of responses expected for this request.
-    pub fn max_responses(&self, current_phase: Phase) -> u64 {
+    pub fn max_responses(&self, chain_config: &ChainConfig, current_phase: Phase) -> u64 {
         match self {
             RequestType::Status(_) => 1,
             RequestType::Goodbye(_) => 0,
             RequestType::BlocksByRange(req) => req.count(),
             RequestType::BlocksByRoot(req) => req.len() as u64,
-            RequestType::BlobsByRange(req) => req.max_blobs_requested::<P>(current_phase),
+            RequestType::BlobsByRange(req) => req.max_blobs_requested(chain_config, current_phase),
             RequestType::BlobsByRoot(req) => req.blob_ids.len() as u64,
             RequestType::DataColumnsByRoot(req) => req.data_column_ids.len() as u64,
             RequestType::DataColumnsByRange(req) => req.max_requested::<P>(),
