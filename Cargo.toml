@@ -30,6 +30,7 @@ hex = { workspace = true }
 itertools = { workspace = true }
 libp2p = { workspace = true }
 libp2p-mplex = { workspace = true }
+local-ip-address = { workspace = true }
 lru = { workspace = true }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
