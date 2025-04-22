@@ -29,7 +29,7 @@ mod factory;
 /// Bellatrix block with length < max_rpc_size.
 fn bellatrix_block_small<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
     let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
-    let txs = Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(5000)).unwrap());
+    let txs = Arc::new(ContiguousList::try_from_iter(std::iter::repeat_n(tx, 5000)).unwrap());
 
     let block = BellatrixSignedBeaconBlock {
         message: BellatrixBeaconBlock {
@@ -54,7 +54,7 @@ fn bellatrix_block_small<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
 /// Hence, we generate a merge block just greater than `MAX_RPC_SIZE` to test rejection on the rpc layer.
 fn bellatrix_block_large<P: Preset>() -> BellatrixSignedBeaconBlock<P> {
     let tx = ByteList::<P::MaxBytesPerTransaction>::from_ssz_default([0; 1024]).unwrap();
-    let txs = Arc::new(ContiguousList::try_from_iter(std::iter::repeat(tx).take(100000)).unwrap());
+    let txs = Arc::new(ContiguousList::try_from_iter(std::iter::repeat_n(tx, 100000)).unwrap());
 
     let block = BellatrixSignedBeaconBlock {
         message: BellatrixBeaconBlock {
