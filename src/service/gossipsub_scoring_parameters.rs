@@ -10,7 +10,7 @@ use typenum::Unsigned as _;
 use types::{
     config::Config as ChainConfig,
     phase0::{
-        consts::{AttestationSubnetCount, TARGET_AGGREGATORS_PER_COMMITTEE},
+        consts::{AttestationSubnetCount, TargetAggregatorsPerCommittee},
         primitives::Slot,
     },
     preset::Preset,
@@ -77,7 +77,7 @@ impl<P: Preset> PeerScoreSettings<P> {
             decay_interval: max(Duration::from_secs(1), slot),
             decay_to_zero: 0.01,
             mesh_n,
-            target_aggregators_per_committee: TARGET_AGGREGATORS_PER_COMMITTEE.get(),
+            target_aggregators_per_committee: TargetAggregatorsPerCommittee::U64,
             attestation_subnet_count: AttestationSubnetCount::U64,
             phantom: PhantomData,
         }
