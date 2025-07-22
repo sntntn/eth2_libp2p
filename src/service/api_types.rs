@@ -1,6 +1,6 @@
+use crate::rpc::methods::{ResponseTermination, RpcResponse, RpcSuccessResponse, StatusMessage};
 use std::sync::Arc;
 
-use libp2p::swarm::ConnectionId;
 use types::{
     combined::{
         LightClientBootstrap, LightClientFinalityUpdate, LightClientOptimisticUpdate,
@@ -11,18 +11,12 @@ use types::{
     preset::Preset,
 };
 
-use crate::rpc::{
-    methods::{ResponseTermination, RpcResponse, RpcSuccessResponse, StatusMessage},
-    SubstreamId,
-};
-
-/// Identifier of requests sent by a peer.
-pub type PeerRequestId = (ConnectionId, SubstreamId);
+pub type Id = usize;
 
 /// Identifier of a request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RequestId<AppReqId> {
-    Application(AppReqId),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AppRequestId {
+    Application(Id),
     Internal,
 }
 
@@ -105,7 +99,7 @@ impl<P: Preset> std::convert::From<Response<P>> for RpcResponse<P> {
     }
 }
 
-impl<AppReqId: std::fmt::Debug> slog::Value for RequestId<AppReqId> {
+impl slog::Value for AppRequestId {
     fn serialize(
         &self,
         record: &slog::Record,
@@ -113,9 +107,11 @@ impl<AppReqId: std::fmt::Debug> slog::Value for RequestId<AppReqId> {
         serializer: &mut dyn slog::Serializer,
     ) -> slog::Result {
         match self {
-            RequestId::Internal => slog::Value::serialize("Behaviour", record, key, serializer),
-            RequestId::Application(ref id) => {
+            AppRequestId::Application(ref id) => {
                 slog::Value::serialize(&format_args!("{:?}", id), record, key, serializer)
+            }
+            AppRequestId::Internal => {
+                slog::Value::serialize("internal request", record, key, serializer)
             }
         }
     }
