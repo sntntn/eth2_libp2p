@@ -141,11 +141,11 @@ where
     /// Waker, to be sure the handler gets polled when needed.
     waker: Option<std::task::Waker>,
 
-    /// Logger for handling RPC streams
-    log: slog::Logger,
-
     /// Timeout that will me used for inbound and outbound responses.
     resp_timeout: Duration,
+
+    /// Logger for handling RPC streams
+    log: slog::Logger,
 }
 
 enum HandlerState {
@@ -318,6 +318,7 @@ where
             }
             return;
         };
+
         // If the response we are sending is an error, report back for handling
         if let RpcResponse::Error(ref code, ref reason) = response {
             self.events_out.push(HandlerEvent::Err(HandlerErr::Inbound {
@@ -338,6 +339,7 @@ where
 
             return;
         }
+
         inbound_info.pending_items.push_back(response);
     }
 }
