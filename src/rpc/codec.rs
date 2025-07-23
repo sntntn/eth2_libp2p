@@ -869,8 +869,8 @@ fn handle_rpc_response<P: Preset>(
         SupportedProtocol::PingV1 => Ok(Some(RpcSuccessResponse::Pong(Ping {
             data: u64::from_ssz_default(decoded_buffer)?,
         }))),
-        SupportedProtocol::MetaDataV1 => Ok(Some(RpcSuccessResponse::MetaData(MetaData::V1(
-            MetaDataV1::from_ssz_default(decoded_buffer)?,
+        SupportedProtocol::MetaDataV1 => Ok(Some(RpcSuccessResponse::MetaData(Arc::new(
+            MetaData::V1(MetaDataV1::from_ssz_default(decoded_buffer)?),
         )))),
         SupportedProtocol::LightClientBootstrapV1 => match fork_name {
             Some(Phase::Phase0) => Err(RPCError::ErrorResponse(
@@ -1015,11 +1015,11 @@ fn handle_rpc_response<P: Preset>(
             )),
         },
         // MetaData V2/V3 responses have no context bytes, so behave similarly to V1 responses
-        SupportedProtocol::MetaDataV3 => Ok(Some(RpcSuccessResponse::MetaData(MetaData::V3(
-            MetaDataV3::from_ssz_default(decoded_buffer)?,
+        SupportedProtocol::MetaDataV3 => Ok(Some(RpcSuccessResponse::MetaData(Arc::new(
+            MetaData::V3(MetaDataV3::from_ssz_default(decoded_buffer)?),
         )))),
-        SupportedProtocol::MetaDataV2 => Ok(Some(RpcSuccessResponse::MetaData(MetaData::V2(
-            MetaDataV2::from_ssz_default(decoded_buffer)?,
+        SupportedProtocol::MetaDataV2 => Ok(Some(RpcSuccessResponse::MetaData(Arc::new(
+            MetaData::V2(MetaDataV2::from_ssz_default(decoded_buffer)?),
         )))),
         SupportedProtocol::BlocksByRangeV2 => match fork_name {
             Some(Phase::Altair) => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
@@ -1280,28 +1280,31 @@ mod tests {
         Ping { data: 1 }
     }
 
-    fn metadata() -> MetaData {
+    fn metadata() -> Arc<MetaData> {
         MetaData::V1(MetaDataV1 {
             seq_number: 1,
             attnets: EnrAttestationBitfield::default(),
         })
+        .into()
     }
 
-    fn metadata_v2() -> MetaData {
+    fn metadata_v2() -> Arc<MetaData> {
         MetaData::V2(MetaDataV2 {
             seq_number: 1,
             attnets: EnrAttestationBitfield::default(),
             syncnets: EnrSyncCommitteeBitfield::default(),
         })
+        .into()
     }
 
-    fn metadata_v3() -> MetaData {
+    fn metadata_v3() -> Arc<MetaData> {
         MetaData::V3(MetaDataV3 {
             seq_number: 1,
             attnets: EnrAttestationBitfield::default(),
             syncnets: EnrSyncCommitteeBitfield::default(),
             custody_subnet_count: 1,
         })
+        .into()
     }
 
     /// Encodes the given protocol response as bytes.

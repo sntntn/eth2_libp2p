@@ -12,7 +12,7 @@ use libp2p::swarm::{
 };
 use libp2p::swarm::{ConnectionClosed, FromSwarm, SubstreamProtocol, THandlerInEvent};
 use libp2p::PeerId;
-use slog::{debug, error, o, trace};
+use slog::{debug, o, trace};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -104,6 +104,13 @@ pub struct InboundRequestId {
     substream_id: SubstreamId,
 }
 
+// An Active inbound request received via Rpc.
+struct ActiveInboundRequest<P: Preset> {
+    pub peer_id: PeerId,
+    pub request_type: RequestType<P>,
+    pub peer_disconnected: bool,
+}
+
 impl InboundRequestId {
     /// Creates an _unchecked_ [`InboundRequestId`].
     ///
@@ -157,7 +164,7 @@ pub struct RPC<Id: ReqId, P: Preset> {
     /// Rate limiter for our own requests.
     outbound_request_limiter: SelfRateLimiter<Id, P>,
     /// Active inbound requests that are awaiting a response.
-    active_inbound_requests: HashMap<InboundRequestId, (PeerId, RequestType<P>)>,
+    active_inbound_requests: HashMap<InboundRequestId, ActiveInboundRequest<P>>,
     /// Queue of events to be processed.
     events: Vec<BehaviourAction<Id, P>>,
     fork_context: Arc<ForkContext>,
@@ -211,25 +218,19 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
     }
 
     /// Sends an RPC response.
-    ///
-    /// The peer must be connected for this to succeed.
+    /// Returns an `Err` if the request does exist in the active inbound requests list.
     pub fn send_response(
         &mut self,
-        peer_id: PeerId,
         request_id: InboundRequestId,
         response: RpcResponse<P>,
-    ) {
-        let Some((_peer_id, request_type)) = self.active_inbound_requests.remove(&request_id)
+    ) -> Result<(), RpcResponse<P>> {
+        let Some(ActiveInboundRequest {
+            peer_id,
+            request_type,
+            peer_disconnected,
+        }) = self.active_inbound_requests.remove(&request_id)
         else {
-            error!(
-                self.log,
-                "Request not found in active_inbound_requests. Response not sent";
-                "peer_id" => %peer_id,
-                "request_id" => ?request_id,
-                "response" => %response
-            );
-
-            return;
+            return Err(response);
         };
 
         // Add the request back to active requests if the response is `Success` and requires stream
@@ -237,11 +238,30 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
         if request_type.protocol().terminator().is_some()
             && matches!(response, RpcResponse::Success(_))
         {
-            self.active_inbound_requests
-                .insert(request_id, (peer_id, request_type.clone()));
+            self.active_inbound_requests.insert(
+                request_id,
+                ActiveInboundRequest {
+                    peer_id,
+                    request_type: request_type.clone(),
+                    peer_disconnected,
+                },
+            );
+        }
+
+        if peer_disconnected {
+            trace!(
+                self.log,
+                "Discarding response, peer is no longer connected";
+                "peer_id" => %peer_id,
+                "request_id" => ?request_id,
+                "response" => %response,
+            );
+
+            return Ok(());
         }
 
         self.send_response_inner(peer_id, request_type.protocol(), request_id, response);
+        Ok(())
     }
 
     fn send_response_inner(
@@ -424,9 +444,10 @@ where
                 self.events.push(error_msg);
             }
 
-            self.active_inbound_requests.retain(
-                |_inbound_request_id, (request_peer_id, _request_type)| *request_peer_id != peer_id,
-            );
+            self.active_inbound_requests
+                .values_mut()
+                .filter(|request| request.peer_id == peer_id)
+                .for_each(|request| request.peer_disconnected = true);
 
             if let Some(limiter) = self.response_limiter.as_mut() {
                 limiter.peer_disconnected(peer_id);
@@ -467,9 +488,17 @@ where
                     .active_inbound_requests
                     .iter()
                     .filter(
-                        |(_inbound_request_id, (request_peer_id, active_request_type))| {
+                        |(
+                            _inbound_request_id,
+                            ActiveInboundRequest {
+                                peer_id: request_peer_id,
+                                request_type: active_request_type,
+                                peer_disconnected,
+                            },
+                        )| {
                             *request_peer_id == peer_id
                                 && active_request_type.protocol() == request_type.protocol()
+                                && !peer_disconnected
                         },
                     )
                     .count()
@@ -500,20 +529,26 @@ where
                 }
 
                 // Requests that are below the limit on the number of simultaneous requests are added to the active inbound requests.
-                self.active_inbound_requests
-                    .insert(request_id, (peer_id, request_type.clone()));
+                self.active_inbound_requests.insert(
+                    request_id,
+                    ActiveInboundRequest {
+                        peer_id,
+                        request_type: request_type.clone(),
+                        peer_disconnected: false,
+                    },
+                );
 
                 // If we received a Ping, we queue a Pong response.
                 if let RequestType::Ping(_) = request_type {
                     trace!(self.log, "Received Ping, queueing Pong"; "connection_id" => %connection_id, "peer_id" => %peer_id);
 
                     self.send_response(
-                        peer_id,
                         request_id,
                         RpcResponse::Success(RpcSuccessResponse::Pong(Ping {
                             data: self.seq_number,
                         })),
-                    );
+                    )
+                    .expect("Request to exist");
                 }
 
                 self.events.push(ToSwarm::GenerateEvent(RPCMessage {

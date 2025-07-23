@@ -11,8 +11,7 @@ use crate::peer_manager::{MIN_OUTBOUND_ONLY_FACTOR, PEER_EXCESS_FACTOR, PRIORITY
 use crate::rpc::methods::MetadataRequest;
 use crate::rpc::{
     GoodbyeReason, HandlerErr, InboundRequestId, NetworkParams, Protocol, RPCError, RPCMessage,
-    RPCReceived, RequestType, ResponseTermination, RpcErrorResponse, RpcResponse,
-    RpcSuccessResponse, RPC,
+    RPCReceived, RequestType, ResponseTermination, RpcResponse, RpcSuccessResponse, RPC,
 };
 use crate::types::{
     attestation_sync_committee_topics, fork_core_topics, subnet_from_topic_hash, EnrForkId,
@@ -35,16 +34,15 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::upnp::tokio::Behaviour as Upnp;
 use libp2p::{identify, PeerId, SwarmBuilder};
-use slog::{crit, debug, info, o, trace, warn};
+use slog::{crit, debug, error, info, o, trace, warn};
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
-use typenum::Unsigned as _;
-
 use std::time::Duration;
 use std::usize;
 use std_ext::ArcExt as _;
+use typenum::Unsigned as _;
 
 use types::{
     altair::consts::SyncCommitteeSubnetCount,
@@ -1024,29 +1022,26 @@ impl<P: Preset> Network<P> {
     }
 
     /// Send a successful response to a peer over RPC.
-    pub fn send_response(
+    pub fn send_response<T: Into<RpcResponse<P>>>(
         &mut self,
         peer_id: PeerId,
         inbound_request_id: InboundRequestId,
-        response: Response<P>,
+        response: T,
     ) {
-        self.eth2_rpc_mut()
-            .send_response(peer_id, inbound_request_id, response.into())
-    }
-
-    /// Inform the peer that their request produced an error.
-    pub fn send_error_response(
-        &mut self,
-        peer_id: PeerId,
-        inbound_request_id: InboundRequestId,
-        error: RpcErrorResponse,
-        reason: String,
-    ) {
-        self.eth2_rpc_mut().send_response(
-            peer_id,
-            inbound_request_id,
-            RpcResponse::Error(error, reason.into()),
-        )
+        if let Err(response) = self
+            .eth2_rpc_mut()
+            .send_response(inbound_request_id, response.into())
+        {
+            if self.network_globals.peers.read().is_connected(&peer_id) {
+                error!(
+                    self.log,
+                    "Request not found in RPC active requests";
+                    "peer_id" => %peer_id,
+                    "inbound_request_id" => ?inbound_request_id,
+                    "response" => %response,
+                );
+            }
+        }
     }
 
     /* Peer management functions */
@@ -1216,20 +1211,6 @@ impl<P: Preset> Network<P> {
         };
         self.eth2_rpc_mut()
             .send_request(peer_id, AppRequestId::Internal, event);
-    }
-
-    /// Sends a METADATA response to a peer.
-    fn send_meta_data_response(
-        &mut self,
-        _req: MetadataRequest<P>,
-        inbound_request_id: InboundRequestId,
-        peer_id: PeerId,
-    ) {
-        let metadata = self.network_globals.local_metadata.read().clone();
-        // The encoder is responsible for sending the negotiated version of the metadata
-        let event = RpcResponse::Success(RpcSuccessResponse::MetaData(metadata));
-        self.eth2_rpc_mut()
-            .send_response(peer_id, inbound_request_id, event);
     }
 
     // RPC Propagation methods
@@ -1500,9 +1481,13 @@ impl<P: Preset> Network<P> {
                         self.peer_manager_mut().ping_request(&peer_id, ping.data);
                         None
                     }
-                    RequestType::MetaData(req) => {
+                    RequestType::MetaData(_req) => {
                         // send the requested meta-data
-                        self.send_meta_data_response(req, inbound_request_id, peer_id);
+                        let metadata = self.network_globals.local_metadata.read().clone();
+                        // The encoder is responsible for sending the negotiated version of the metadata
+                        let response =
+                            RpcResponse::Success(RpcSuccessResponse::MetaData(Arc::new(metadata)));
+                        self.send_response(peer_id, inbound_request_id, response);
                         None
                     }
                     RequestType::Goodbye(reason) => {
@@ -1655,7 +1640,7 @@ impl<P: Preset> Network<P> {
                     }
                     RpcSuccessResponse::MetaData(meta_data) => {
                         self.peer_manager_mut()
-                            .meta_data_response(&peer_id, meta_data);
+                            .meta_data_response(&peer_id, meta_data.as_ref().clone());
                         None
                     }
                     /* Network propagated protocols */
