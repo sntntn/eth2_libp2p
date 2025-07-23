@@ -1166,7 +1166,7 @@ async fn test_delayed_rpc_response() {
                     app_request_id: _,
                     response,
                 } => {
-                    debug!(log, "Sender received"; "request_id" => %request_id);
+                    debug!(log, "Sender received response"; "request_id" => %request_id, "elapsed" => ?request_sent_at.elapsed());
                     assert_eq!(response, rpc_response);
 
                     match request_id {
@@ -1291,7 +1291,11 @@ async fn test_active_requests() {
                     // Send requests in quick succession to intentionally trigger request queueing in the self-limiter.
                     for i in 0..REQUESTS {
                         sender
-                            .send_request(peer_id, AppRequestId::Application(i), rpc_request.clone())
+                            .send_request(
+                                peer_id,
+                                AppRequestId::Application(i),
+                                rpc_request.clone(),
+                            )
                             .unwrap();
                     }
                 }
