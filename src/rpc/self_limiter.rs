@@ -340,6 +340,7 @@ mod tests {
     use crate::types::ForkContext;
     use libp2p::PeerId;
     use slog::{o, Drain};
+    use std::num::NonZeroU64;
     use std::sync::Arc;
     use std::time::Duration;
     use types::nonstandard::Phase;
@@ -362,7 +363,7 @@ mod tests {
     async fn test_next_peer_request_ready() {
         let log = build_log(slog::Level::Debug, false);
         let config = OutboundRateLimiterConfig(RateLimiterConfig {
-            ping_quota: Quota::n_every(1, 2),
+            ping_quota: Quota::n_every(NonZeroU64::new(1).unwrap(), 2),
             ..Default::default()
         });
         let chain_config = Arc::new(Config::mainnet().rapid_upgrade());

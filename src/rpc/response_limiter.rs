@@ -7,7 +7,6 @@ use crate::types::ForkContext;
 use crate::PeerId;
 use futures::FutureExt;
 use libp2p::swarm::ConnectionId;
-use types::preset::Preset;
 use slog::{crit, debug, Logger};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
@@ -15,6 +14,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio_util::time::DelayQueue;
+use types::preset::Preset;
 
 /// A response that was rate limited or waiting on rate limited responses for the same peer and
 /// protocol.
@@ -84,9 +84,13 @@ impl<P: Preset> ResponseLimiter<P> {
             return false;
         }
 
-        if let Err(wait_time) =
-            Self::try_limiter(&mut self.limiter, peer_id, response.clone(), protocol, &self.log)
-        {
+        if let Err(wait_time) = Self::try_limiter(
+            &mut self.limiter,
+            peer_id,
+            response.clone(),
+            protocol,
+            &self.log,
+        ) {
             self.delayed_responses
                 .entry((peer_id, protocol))
                 .or_default()

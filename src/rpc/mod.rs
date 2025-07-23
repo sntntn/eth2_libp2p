@@ -189,9 +189,12 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
                 .expect("Inbound limiter configuration parameters are valid")
         });
 
-        let outbound_request_limiter: SelfRateLimiter<Id, P> =
-            SelfRateLimiter::new(outbound_rate_limiter_config, fork_context.clone(), log.clone())
-                .expect("Outbound limiter configuration parameters are valid");
+        let outbound_request_limiter: SelfRateLimiter<Id, P> = SelfRateLimiter::new(
+            outbound_rate_limiter_config,
+            fork_context.clone(),
+            log.clone(),
+        )
+        .expect("Outbound limiter configuration parameters are valid");
 
         RPC {
             chain_config,
