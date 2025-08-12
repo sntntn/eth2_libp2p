@@ -31,6 +31,7 @@ itertools = { workspace = true }
 libp2p = { workspace = true }
 libp2p-mplex = { workspace = true }
 local-ip-address = { workspace = true }
+logging = {workspace = true }
 lru = { workspace = true }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
@@ -42,13 +43,14 @@ rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
-slog = { workspace = true }
+slog = { workspace = true } # TODO
 smallvec = { workspace = true }
 snap = { workspace = true }
 ssz = { workspace = true }
 std_ext = { workspace = true }
 strum = { workspace = true }
 tiny-keccak = { workspace = true }
+tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-io-timeout = { workspace = true }
 tokio-util = { workspace = true }
