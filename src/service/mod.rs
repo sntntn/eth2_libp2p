@@ -204,7 +204,6 @@ impl<P: Preset> Network<P> {
             local_keypair.clone(),
             &config,
             &ctx.enr_fork_id,
-            &log,
         )?;
 
         // construct the metadata
@@ -406,7 +405,6 @@ impl<P: Preset> Network<P> {
                 local_keypair.clone(),
                 &config,
                 network_globals.clone(),
-                &log,
             )
             .await?;
             // start searching for peers
@@ -1235,7 +1233,7 @@ impl<P: Preset> Network<P> {
     /// Dial cached Enrs in discovery service that are in the given `subnet_id` and aren't
     /// in Connected, Dialing or Banned state.
     fn dial_cached_enrs_in_subnet(&mut self, chain_config: Arc<ChainConfig>, subnet: Subnet) {
-        let predicate = subnet_predicate(chain_config, vec![subnet], &self.log);
+        let predicate = subnet_predicate(chain_config, vec![subnet]);
         let peers_to_dial: Vec<Enr> = self
             .discovery()
             .cached_enrs()

@@ -10,7 +10,7 @@ use alloy_rlp::bytes::Bytes;
 use anyhow::{anyhow, Result};
 use grandine_version::{APPLICATION_NAME, APPLICATION_VERSION};
 use libp2p::identity::Keypair;
-use slog::{debug, warn};
+use tracing::{debug, warn};
 use ssz::{SszReadDefault as _, SszWrite as _};
 use std::fs::File;
 use std::io::prelude::*;
@@ -99,21 +99,20 @@ pub fn use_or_load_enr(
     enr_key: &CombinedKey,
     local_enr: &mut Enr,
     config: &NetworkConfig,
-    log: &slog::Logger,
 ) -> Result<()> {
     if let Some(network_dir) = config.network_dir.as_deref() {
         let enr_f = network_dir.join(ENR_FILENAME);
         if let Ok(mut enr_file) = File::open(enr_f.clone()) {
             let mut enr_string = String::new();
             match enr_file.read_to_string(&mut enr_string) {
-                Err(_) => debug!(log, "Could not read ENR from file"),
+                Err(_) => debug!("Could not read ENR from file"),
                 Ok(_) => {
                     match Enr::from_str(&enr_string) {
                         Ok(disk_enr) => {
                             // if the same node id, then we may need to update our sequence number
                             if local_enr.node_id() == disk_enr.node_id() {
                                 if compare_enr(local_enr, &disk_enr) {
-                                    debug!(log, "ENR loaded from disk"; "file" => ?enr_f);
+                                    debug!(file = ?enr_f,"ENR loaded from disk");
                                     // the stored ENR has the same configuration, use it
                                     *local_enr = disk_enr;
                                     return Ok(());
@@ -132,11 +131,11 @@ pub fn use_or_load_enr(
                                 local_enr.set_seq(new_seq_no, enr_key).map_err(|e| {
                                     anyhow!("Could not update ENR sequence number: {:?}", e)
                                 })?;
-                                debug!(log, "ENR sequence number increased"; "seq" =>  new_seq_no);
+                                debug!(seq = new_seq_no, "ENR sequence number increased");
                             }
                         }
                         Err(e) => {
-                            warn!(log, "ENR from file could not be decoded"; "error" => ?e);
+                            warn!(error = ?e,"ENR from file could not be decoded");
                         }
                     }
                 }
@@ -144,7 +143,7 @@ pub fn use_or_load_enr(
         }
     }
 
-    save_enr_to_disk(config.network_dir.as_deref(), local_enr, log);
+    save_enr_to_disk(config.network_dir.as_deref(), local_enr);
 
     Ok(())
 }
@@ -159,7 +158,6 @@ pub fn build_or_load_enr<P: Preset>(
     local_key: Keypair,
     config: &NetworkConfig,
     enr_fork_id: &EnrForkId,
-    log: &slog::Logger,
 ) -> Result<Enr> {
     // Build the local ENR.
     // Note: Discovery should update the ENR record's IP to the external IP as seen by the
@@ -167,7 +165,7 @@ pub fn build_or_load_enr<P: Preset>(
     let enr_key = CombinedKey::from_libp2p(local_key)?;
     let mut local_enr = build_enr(chain_config, &enr_key, config, enr_fork_id)?;
 
-    use_or_load_enr(&enr_key, &mut local_enr, config, log)?;
+    use_or_load_enr(&enr_key, &mut local_enr, config)?;
     Ok(local_enr)
 }
 
@@ -320,7 +318,7 @@ pub fn load_enr_from_disk(dir: &Path) -> Result<Enr, String> {
 }
 
 /// Saves an ENR to disk
-pub fn save_enr_to_disk(dir: Option<&Path>, enr: &Enr, log: &slog::Logger) {
+pub fn save_enr_to_disk(dir: Option<&Path>, enr: &Enr) {
     let Some(dir) = dir else {
         return;
     };
@@ -330,12 +328,13 @@ pub fn save_enr_to_disk(dir: Option<&Path>, enr: &Enr, log: &slog::Logger) {
         .and_then(|mut f| f.write_all(enr.to_base64().as_bytes()))
     {
         Ok(_) => {
-            debug!(log, "ENR written to disk");
+            debug!("ENR written to disk");
         }
         Err(e) => {
             warn!(
-                log,
-                "Could not write ENR to file"; "file" => format!("{:?}{:?}",dir, ENR_FILENAME),  "error" => %e
+                file = format!("{:?}{:?}",dir, ENR_FILENAME),
+                error = %e,
+                "Could not write ENR to file"
             );
         }
     }

@@ -195,9 +195,6 @@ pub struct Discovery {
 
     /// Specifies whether various port numbers should be updated after the discovery service has been started
     update_ports: UpdatePorts,
-
-    /// Logger for the discovery behaviour.
-    log: slog::Logger,
 }
 
 impl Discovery {
@@ -207,9 +204,7 @@ impl Discovery {
         local_key: Keypair,
         config: &NetworkConfig,
         network_globals: Arc<NetworkGlobals>,
-        log: &slog::Logger,
     ) -> Result<Self> {
-        let log = log.clone();
         let enr_dir = config.network_dir.clone();
         let local_enr = network_globals.local_enr.read().clone();
         let local_node_id = local_enr.node_id();
@@ -330,7 +325,6 @@ impl Discovery {
             event_stream,
             started: !config.disable_discovery,
             update_ports,
-            log,
             enr_dir,
         })
     }
@@ -427,7 +421,7 @@ impl Discovery {
         // replace the global version
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
         // persist modified enr to disk
-        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
         Ok(true)
     }
 
@@ -463,7 +457,7 @@ impl Discovery {
         // replace the global version
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
         // persist modified enr to disk
-        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
         Ok(true)
     }
 
@@ -475,7 +469,7 @@ impl Discovery {
         const IS_TCP: bool = false;
         if self.discv5.update_local_enr_socket(socket_addr, IS_TCP) {
             // persist modified enr to disk
-            enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
+            enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
         }
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
         Ok(())
@@ -543,7 +537,7 @@ impl Discovery {
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
 
         // persist modified enr to disk
-        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
         Ok(())
     }
 
@@ -582,7 +576,7 @@ impl Discovery {
         *self.network_globals.local_enr.write() = self.discv5.local_enr();
 
         // persist modified enr to disk
-        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr(), &self.log);
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
     }
 
     // Bans a peer and it's associated seen IP addresses.
@@ -749,7 +743,7 @@ impl Discovery {
         if !filtered_subnet_queries.is_empty() {
             // build the subnet predicate as a combination of the eth2_fork_predicate and the subnet predicate
             let subnet_predicate =
-                subnet_predicate(self.chain_config.clone(), filtered_subnets, &self.log);
+                subnet_predicate(self.chain_config.clone(), filtered_subnets);
 
             debug!(
                 subnets = ?filtered_subnet_queries,
@@ -882,8 +876,7 @@ impl Discovery {
                             // Check the specific subnet against the enr
                             let subnet_predicate = subnet_predicate(
                                 self.chain_config.clone(),
-                                vec![query.subnet],
-                                &self.log,
+                                vec![query.subnet]
                             );
 
                             r.clone()
@@ -1054,7 +1047,7 @@ impl NetworkBehaviour for Discovery {
                                 self.discv5.update_local_enr_socket(socket_addr, true);
                             }
                             let enr = self.discv5.local_enr();
-                            enr::save_enr_to_disk(self.enr_dir.as_deref(), &enr, &self.log);
+                            enr::save_enr_to_disk(self.enr_dir.as_deref(), &enr);
                             // update  network globals
                             *self.network_globals.local_enr.write() = enr;
                             // A new UDP socket has been detected.
@@ -1234,7 +1227,7 @@ mod tests {
             config.clone_arc(),
         );
         let keypair = keypair.into();
-        Discovery::new(chain_config, keypair, &config, Arc::new(globals), &log)
+        Discovery::new(chain_config, keypair, &config, Arc::new(globals))
             .await
             .unwrap()
     }
