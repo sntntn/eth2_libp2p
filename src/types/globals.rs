@@ -86,7 +86,6 @@ impl NetworkGlobals {
                 config,
                 trusted_peers,
                 disable_peer_scoring,
-                log,
             )),
             gossipsub_subscriptions: RwLock::new(HashSet::new()),
             sync_state: RwLock::new(SyncState::Stalled),
