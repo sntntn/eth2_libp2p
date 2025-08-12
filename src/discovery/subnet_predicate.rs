@@ -1,7 +1,7 @@
 //! The subnet predicate used for searching for a particular subnet.
 use super::*;
 use eip_7594::get_custody_groups;
-use slog::trace;
+use logging::trace_with_peers;
 use ssz::Uint256;
 use std::sync::Arc;
 use types::config::Config as ChainConfig;
@@ -10,10 +10,7 @@ use types::config::Config as ChainConfig;
 pub fn subnet_predicate(
     chain_config: Arc<ChainConfig>,
     subnets: Vec<Subnet>,
-    log: &slog::Logger,
 ) -> impl Fn(&Enr) -> bool + Send {
-    let log_clone = log.clone();
-
     move |enr| {
         let Ok(attestation_bitfield) = enr.attestation_bitfield() else {
             return false;
@@ -45,10 +42,9 @@ pub fn subnet_predicate(
         });
 
         if !predicate {
-            trace!(
-                log_clone,
-                "Peer found but not on any of the desired subnets";
-                "peer_id" => %enr.peer_id()
+            trace_with_peers!(
+                peer_id = %enr.peer_id(),
+                "Peer found but not on any of the desired subnets"
             );
         }
         predicate

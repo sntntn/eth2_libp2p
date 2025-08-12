@@ -49,7 +49,6 @@ impl NetworkGlobals {
         trusted_peers: Vec<PeerId>,
         disable_peer_scoring: bool,
         target_subnet_peers: usize,
-        log: &slog::Logger,
         network_config: Arc<NetworkConfig>,
     ) -> Self {
         let (sampling_subnets, sampling_columns) = if config.is_eip7594_fork_epoch_set() {
@@ -82,12 +81,7 @@ impl NetworkGlobals {
             peer_id: RwLock::new(enr.peer_id()),
             listen_multiaddrs: RwLock::new(Vec::new()),
             local_metadata: RwLock::new(local_metadata),
-            peers: RwLock::new(PeerDB::new(
-                config,
-                trusted_peers,
-                disable_peer_scoring,
-                log,
-            )),
+            peers: RwLock::new(PeerDB::new(config, trusted_peers, disable_peer_scoring)),
             gossipsub_subscriptions: RwLock::new(HashSet::new()),
             sync_state: RwLock::new(SyncState::Stalled),
             backfill_state: RwLock::new(BackFillState::Paused),
@@ -193,7 +187,6 @@ impl NetworkGlobals {
     pub fn new_test_globals(
         chain_config: Arc<ChainConfig>,
         trusted_peers: Vec<PeerId>,
-        log: &slog::Logger,
         network_config: Arc<NetworkConfig>,
     ) -> NetworkGlobals {
         let metadata = MetaData::V3(MetaDataV3 {
@@ -203,20 +196,13 @@ impl NetworkGlobals {
             custody_subnet_count: chain_config.custody_requirement,
         });
 
-        Self::new_test_globals_with_metadata(
-            chain_config,
-            trusted_peers,
-            metadata,
-            log,
-            network_config,
-        )
+        Self::new_test_globals_with_metadata(chain_config, trusted_peers, metadata, network_config)
     }
 
     pub(crate) fn new_test_globals_with_metadata(
         chain_config: Arc<ChainConfig>,
         trusted_peers: Vec<PeerId>,
         metadata: MetaData,
-        log: &slog::Logger,
         network_config: Arc<NetworkConfig>,
     ) -> NetworkGlobals {
         use crate::CombinedKeyExt;
@@ -230,7 +216,6 @@ impl NetworkGlobals {
             trusted_peers,
             false,
             3,
-            log,
             network_config,
         )
     }
