@@ -77,7 +77,7 @@ pub async fn build_libp2p_instance<P: Preset>(
     // launch libp2p service
 
     let (shutdown_tx, _) = futures::channel::mpsc::channel(1);
-    let executor = TaskExecutor::new(log.clone(), shutdown_tx);
+    let executor = TaskExecutor::new( shutdown_tx);
     let libp2p_context = Context {
         chain_config: chain_config.clone_arc(),
         config,
