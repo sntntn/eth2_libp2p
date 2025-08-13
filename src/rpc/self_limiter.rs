@@ -14,7 +14,9 @@ use std::{
 
 use futures::FutureExt;
 use libp2p::{swarm::NotifyHandler, PeerId};
-use slog::{crit, debug, Logger};
+use slog::Logger;
+use tracing::debug;
+use logging::crit;
 use smallvec::SmallVec;
 use tokio_util::time::DelayQueue;
 use types::preset::Preset;
@@ -66,7 +68,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         fork_context: Arc<ForkContext>,
         log: Logger,
     ) -> Result<Self, &'static str> {
-        debug!(log, "Using self rate limiting params"; "config" => ?config);
+        debug!(?config, "Using self rate limiting params");
         let rate_limiter = if let Some(c) = config {
             Some(RateLimiter::new_with_config(c.0, fork_context)?)
         } else {
@@ -96,10 +98,9 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         // First check that there are not already other requests waiting to be sent.
         if let Some(queued_requests) = self.delayed_requests.get_mut(&(peer_id, protocol)) {
             debug!(
-                self.log,
-                "Self rate limiting since there are already other requests waiting to be sent";
-                "peer_id" => %peer_id,
-                "protocol" => %req.protocol(),
+                %peer_id, 
+                protocol = %req.protocol(), 
+                "Self rate limiting since there are already other requests waiting to be sent"
             );
 
             queued_requests.push_back(QueuedRequest {
@@ -147,12 +148,10 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
             if let Some(count) = active_request.get(&req.protocol()) {
                 if *count >= MAX_CONCURRENT_REQUESTS {
                     debug!(
-                        log,
-                        "Self rate limiting due to the number of concurrent requests";
-                        "peer_id" => %peer_id,
-                        "protocol" => %req.protocol(),
-                    );
-                    return Err((
+                        %peer_id,
+                        protocol = %req.protocol(),
+                        "Self rate limiting due to the number of concurrent requests"
+                    );                    return Err((
                         QueuedRequest {
                             req,
                             request_id,
@@ -174,18 +173,16 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
                             // this should never happen with default parameters. Let's just send the request.
                             // Log a crit since this is a config issue.
                             crit!(
-                                log,
-                                "Self rate limiting error for a batch that will never fit. Sending request anyway. Check configuration parameters.";
-                                "protocol" => %req.versioned_protocol().protocol(),
+                                protocol = %req.versioned_protocol().protocol(),
+                                "Self rate limiting error for a batch that will never fit. Sending request anyway. Check configuration parameters.",
                             );
                         }
                         RateLimitedErr::TooSoon(wait_time) => {
                             debug!(
-                                log,
-                                "Self rate limiting";
-                                "protocol" => %protocol.protocol(),
-                                "wait_time_ms" => wait_time.as_millis(),
-                                "peer_id" => %peer_id,
+                                protocol = %protocol.protocol(), 
+                                wait_time_ms = wait_time.as_millis(), 
+                                %peer_id, 
+                                "Self rate limiting"
                             );
 
                             return Err((

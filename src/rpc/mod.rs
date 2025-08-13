@@ -12,7 +12,8 @@ use libp2p::swarm::{
 };
 use libp2p::swarm::{ConnectionClosed, FromSwarm, SubstreamProtocol, THandlerInEvent};
 use libp2p::PeerId;
-use slog::{debug, o, trace};
+use slog::o;
+use tracing::{debug, trace};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -191,7 +192,7 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
         let log = log.new(o!("service" => "libp2p_rpc"));
 
         let response_limiter = inbound_rate_limiter_config.map(|config| {
-            debug!(log, "Using response rate limiting params"; "config" => ?config);
+            debug!(?config, "Using response rate limiting params");
             ResponseLimiter::new(config, fork_context.clone(), log.clone())
                 .expect("Inbound limiter configuration parameters are valid")
         });
@@ -250,11 +251,10 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
 
         if peer_disconnected {
             trace!(
-                self.log,
-                "Discarding response, peer is no longer connected";
-                "peer_id" => %peer_id,
-                "request_id" => ?request_id,
-                "response" => %response,
+                %peer_id, 
+                ?request_id, 
+                %response,
+                "Discarding response, peer is no longer connected"
             );
 
             return Ok(());
@@ -329,7 +329,7 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
         let ping = Ping {
             data: self.seq_number,
         };
-        trace!(self.log, "Sending Ping"; "peer_id" => %peer_id);
+        trace!(%peer_id, "Sending Ping");
         self.send_request(peer_id, id, RequestType::Ping(ping));
     }
 }
@@ -508,12 +508,12 @@ where
                 if is_concurrent_request_limit_exceeded {
                     // There is already an active request with the same protocol. Send an error code to the peer.
                     debug!(
-                        self.log,
-                        "There is an active request with the same protocol";
-                        "request" => %request_type,
-                        "protocol" => %request_type.protocol(),
-                        "peer_id" => %peer_id
+                        request = %request_type,
+                        protocol = %request_type.protocol(), 
+                        %peer_id, 
+                        "There is an active request with the same protocol"
                     );
+
 
                     self.send_response_inner(
                         peer_id,
@@ -540,7 +540,7 @@ where
 
                 // If we received a Ping, we queue a Pong response.
                 if let RequestType::Ping(_) = request_type {
-                    trace!(self.log, "Received Ping, queueing Pong"; "connection_id" => %connection_id, "peer_id" => %peer_id);
+                    trace!(connection_id = %connection_id, %peer_id, "Received Ping, queueing Pong");
 
                     self.send_response(
                         request_id,

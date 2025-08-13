@@ -7,7 +7,9 @@ use crate::types::ForkContext;
 use crate::PeerId;
 use futures::FutureExt;
 use libp2p::swarm::ConnectionId;
-use slog::{crit, debug, Logger};
+use slog::Logger;
+use tracing::debug;
+use logging::crit;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -66,13 +68,7 @@ impl<P: Preset> ResponseLimiter<P> {
     ) -> bool {
         // First check that there are not already other responses waiting to be sent.
         if let Some(queue) = self.delayed_responses.get_mut(&(peer_id, protocol)) {
-            debug!(
-                self.log,
-                "Response rate limiting since there are already other responses waiting to be sent";
-                "peer_id" => %peer_id,
-                "protocol" => %protocol,
-            );
-
+            debug!(%peer_id, %protocol, "Response rate limiting since there are already other responses waiting to be sent");
             queue.push_back(QueuedResponse {
                 peer_id,
                 connection_id,
@@ -125,20 +121,13 @@ impl<P: Preset> ResponseLimiter<P> {
                     // This should never happen with default parameters. Let's just send the response.
                     // Log a crit since this is a config issue.
                     crit!(
-                        log,
-                        "Response rate limiting error for a batch that will never fit. Sending response anyway. Check configuration parameters.";
-                        "protocol" => %protocol,
+                        %protocol,
+                        "Response rate limiting error for a batch that will never fit. Sending response anyway. Check configuration parameters."
                     );
                     Ok(())
                 }
                 RateLimitedErr::TooSoon(wait_time) => {
-                    debug!(
-                        log,
-                        "Response rate limiting";
-                        "peer_id" => %peer_id,
-                        "protocol" => %protocol,
-                        "wait_time_ms" => wait_time.as_millis(),
-                    );
+                    debug!(%peer_id, %protocol, wait_time_ms = wait_time.as_millis(), "Response rate limiting");
                     Err(wait_time)
                 }
             },
