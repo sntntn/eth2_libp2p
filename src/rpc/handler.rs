@@ -145,9 +145,6 @@ where
 
     /// Timeout that will me used for inbound and outbound responses.
     resp_timeout: Duration,
-
-    /// Logger for handling RPC streams
-    log: slog::Logger,
 }
 
 enum HandlerState {
@@ -226,13 +223,13 @@ impl<Id, P> RPCHandler<Id, P>
 where
     P: Preset,
 {
+    //#[tracing::instrument(level = "debug", skip_all, fields(peer_id = %peer_id, connection_id = %connection_id))]
     pub fn new(
         listen_protocol: SubstreamProtocol<RPCProtocol<P>, ()>,
         fork_context: Arc<ForkContext>,
         resp_timeout: Duration,
         peer_id: PeerId,
         connection_id: ConnectionId,
-        log: &slog::Logger,
     ) -> Self {
         RPCHandler {
             peer_id,
@@ -252,7 +249,6 @@ where
             outbound_io_error_retries: 0,
             fork_context,
             waker: None,
-            log: log.clone(),
             resp_timeout,
         }
     }

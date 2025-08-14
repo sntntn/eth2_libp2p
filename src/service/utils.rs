@@ -111,7 +111,7 @@ fn keypair_from_bytes(mut bytes: Vec<u8>) -> Result<Keypair> {
 /// generated and is then saved to disk.
 ///
 /// Currently only secp256k1 keys are allowed, as these are the only keys supported by discv5.
-pub fn load_private_key(config: &NetworkConfig, log: &slog::Logger) -> Keypair {
+pub fn load_private_key(config: &NetworkConfig) -> Keypair {
     let mut network_key_f = None;
 
     if let Some(network_dir) = config.network_dir.as_ref() {
@@ -185,7 +185,6 @@ pub fn strip_peer_id(addr: &mut Multiaddr) {
 pub fn load_or_build_metadata(
     network_dir: Option<&Path>,
     custody_subnet_count: Option<u64>,
-    log: &slog::Logger,
 ) -> MetaData {
     // We load a V2 metadata version by default (regardless of current fork)
     // since a V2 metadata can be converted to V1. The RPC encoder is responsible
@@ -249,7 +248,7 @@ pub fn load_or_build_metadata(
     };
 
     debug!(seq_num = meta_data.seq_number(), "Metadata sequence number");
-    save_metadata_to_disk(network_dir, meta_data.clone(), log);
+    save_metadata_to_disk(network_dir, meta_data.clone());
     meta_data
 }
 
@@ -301,7 +300,7 @@ pub(crate) fn create_whitelist_filter(
 }
 
 /// Persist metadata to disk
-pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData, log: &slog::Logger) {
+pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData) {
     let Some(dir) = dir else {
         debug!("Skipping Metadata writing to disk");
         return;

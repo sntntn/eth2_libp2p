@@ -7,7 +7,6 @@ use crate::types::ForkContext;
 use crate::PeerId;
 use futures::FutureExt;
 use libp2p::swarm::ConnectionId;
-use slog::Logger;
 use tracing::debug;
 use logging::crit;
 use std::collections::hash_map::Entry;
@@ -37,8 +36,6 @@ pub(super) struct ResponseLimiter<P: Preset> {
     delayed_responses: HashMap<(PeerId, Protocol), VecDeque<QueuedResponse<P>>>,
     /// The delay required to allow a peer's outbound response per protocol.
     next_response: DelayQueue<(PeerId, Protocol)>,
-    /// Slog logger.
-    log: Logger,
 }
 
 impl<P: Preset> ResponseLimiter<P> {
@@ -46,13 +43,11 @@ impl<P: Preset> ResponseLimiter<P> {
     pub fn new(
         config: InboundRateLimiterConfig,
         fork_context: Arc<ForkContext>,
-        log: Logger,
     ) -> Result<Self, &'static str> {
         Ok(ResponseLimiter {
             limiter: RPCRateLimiter::new_with_config(config.0, fork_context)?,
             delayed_responses: HashMap::new(),
             next_response: DelayQueue::new(),
-            log,
         })
     }
 
@@ -85,7 +80,6 @@ impl<P: Preset> ResponseLimiter<P> {
             peer_id,
             response.clone(),
             protocol,
-            &self.log,
         ) {
             self.delayed_responses
                 .entry((peer_id, protocol))
@@ -112,7 +106,6 @@ impl<P: Preset> ResponseLimiter<P> {
         peer_id: PeerId,
         response: RpcResponse<P>,
         protocol: Protocol,
-        log: &Logger,
     ) -> Result<(), Duration> {
         match limiter.allows(&peer_id, &(response.clone(), protocol)) {
             Ok(()) => Ok(()),
@@ -156,7 +149,6 @@ impl<P: Preset> ResponseLimiter<P> {
                         response.peer_id,
                         response.response.clone(),
                         response.protocol,
-                        &self.log,
                     ) {
                         Ok(()) => {
                             metrics::observe_duration(

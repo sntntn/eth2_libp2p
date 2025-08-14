@@ -1211,7 +1211,6 @@ mod tests {
         let config = Arc::new(config);
         let enr_key: CombinedKey = CombinedKey::from_secp256k1(&keypair);
         let enr: Enr = build_enr(&chain_config, &enr_key, &config, &EnrForkId::default()).unwrap();
-        let log = build_log(slog::Level::Debug, false);
         let globals = NetworkGlobals::new(
             chain_config.clone_arc(),
             enr,
@@ -1223,7 +1222,6 @@ mod tests {
             vec![],
             false,
             3,
-            &log,
             config.clone_arc(),
         );
         let keypair = keypair.into();

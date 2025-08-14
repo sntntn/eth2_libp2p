@@ -12,8 +12,7 @@ use libp2p::swarm::{
 };
 use libp2p::swarm::{ConnectionClosed, FromSwarm, SubstreamProtocol, THandlerInEvent};
 use libp2p::PeerId;
-use slog::o;
-use tracing::{debug, trace};
+use tracing::{debug, trace, instrument};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -170,8 +169,6 @@ pub struct RPC<Id: ReqId, P: Preset> {
     events: Vec<BehaviourAction<Id, P>>,
     fork_context: Arc<ForkContext>,
     enable_light_client_server: bool,
-    /// Slog logger for RPC behaviour.
-    log: slog::Logger,
     /// Networking constant values
     network_params: NetworkParams,
     /// A sequential counter indicating when data gets modified.
@@ -179,28 +176,30 @@ pub struct RPC<Id: ReqId, P: Preset> {
 }
 
 impl<Id: ReqId, P: Preset> RPC<Id, P> {
+    #[instrument(parent = None,
+        level = "trace",
+        fields(service = "libp2p_rpc"),
+        name = "libp2p_rpc",
+        skip_all
+    )]
     pub fn new(
         chain_config: Arc<ChainConfig>,
         fork_context: Arc<ForkContext>,
         enable_light_client_server: bool,
         inbound_rate_limiter_config: Option<InboundRateLimiterConfig>,
         outbound_rate_limiter_config: Option<OutboundRateLimiterConfig>,
-        log: slog::Logger,
         network_params: NetworkParams,
         seq_number: u64,
     ) -> Self {
-        let log = log.new(o!("service" => "libp2p_rpc"));
-
         let response_limiter = inbound_rate_limiter_config.map(|config| {
             debug!(?config, "Using response rate limiting params");
-            ResponseLimiter::new(config, fork_context.clone(), log.clone())
+            ResponseLimiter::new(config, fork_context.clone())
                 .expect("Inbound limiter configuration parameters are valid")
         });
 
         let outbound_request_limiter: SelfRateLimiter<Id, P> = SelfRateLimiter::new(
             outbound_rate_limiter_config,
             fork_context.clone(),
-            log.clone(),
         )
         .expect("Outbound limiter configuration parameters are valid");
 
@@ -212,7 +211,6 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
             events: Vec::new(),
             fork_context,
             enable_light_client_server,
-            log,
             network_params,
             seq_number,
         }
@@ -360,16 +358,13 @@ where
             },
             (),
         );
-        let log = self
-            .log
-            .new(slog::o!("peer_id" => peer_id.to_string(), "connection_id" => connection_id.to_string()));
+        let _rpc_span = tracing::info_span!("rpc_handler", peer_id = %peer_id, connection_id = %connection_id).entered();
         let handler = RPCHandler::new(
             protocol,
             self.fork_context.clone(),
             self.network_params.resp_timeout,
             peer_id,
             connection_id,
-            &log,
         );
 
         Ok(handler)
@@ -395,17 +390,13 @@ where
             (),
         );
 
-        let log = self
-            .log
-            .new(slog::o!("peer_id" => peer_id.to_string(), "connection_id" => connection_id.to_string()));
-
+        let _rpc_span = tracing::info_span!("rpc_handler", peer_id = %peer_id, connection_id = %connection_id).entered();
         let handler = RPCHandler::new(
             protocol,
             self.fork_context.clone(),
             self.network_params.resp_timeout,
             peer_id,
             connection_id,
-            &log,
         );
 
         Ok(handler)

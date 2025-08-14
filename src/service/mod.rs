@@ -34,7 +34,7 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::upnp::tokio::Behaviour as Upnp;
 use libp2p::{identify, PeerId, SwarmBuilder};
-use slog::o;
+//use slog::o;
 use logging::crit;
 use tracing::{debug, error, info, trace, warn};
 use std::num::{NonZeroU8, NonZeroUsize};
@@ -172,8 +172,6 @@ pub struct Network<P: Preset> {
     gossip_cache: GossipCache,
     /// This node's PeerId.
     pub local_peer_id: PeerId,
-    /// Logger for behaviour actions.
-    log: slog::Logger,
 }
 
 /// Implements the combined behaviour for the libp2p service.
@@ -182,14 +180,13 @@ impl<P: Preset> Network<P> {
         chain_config: Arc<ChainConfig>,
         executor: task_executor::TaskExecutor,
         mut ctx: ServiceContext<'_>,
-        log: &slog::Logger,
     ) -> Result<(Self, Arc<NetworkGlobals>)> {
-        let log = log.new(o!("service"=> "libp2p"));
+        let _span = tracing::info_span!("rpc_handler", service = "libp2p").entered();
 
         let config = ctx.config.clone();
         trace!("Libp2p Service starting");
         // initialise the node's ID
-        let local_keypair = utils::load_private_key(&config, &log);
+        let local_keypair = utils::load_private_key(&config);
 
         // Trusted peers will also be marked as explicit in GossipSub.
         // Cfr. https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md#explicit-peering-agreements
@@ -221,7 +218,6 @@ impl<P: Preset> Network<P> {
         let meta_data = utils::load_or_build_metadata(
             config.network_dir.as_deref(),
             custody_subnet_count,
-            &log,
         );
         let seq_number = meta_data.seq_number();
         let globals = NetworkGlobals::new(
@@ -231,7 +227,6 @@ impl<P: Preset> Network<P> {
             trusted_peers,
             config.disable_peer_scoring,
             config.target_subnet_peers,
-            &log,
             config.clone_arc(),
         );
         let network_globals = Arc::new(globals);
@@ -395,7 +390,6 @@ impl<P: Preset> Network<P> {
             config.enable_light_client_server,
             config.inbound_rate_limiter_config.clone(),
             config.outbound_rate_limiter_config.clone(),
-            log.clone(),
             network_params,
             seq_number,
         );
@@ -440,7 +434,7 @@ impl<P: Preset> Network<P> {
                 target_peer_count: config.target_peers,
                 ..Default::default()
             };
-            PeerManager::new(peer_manager_cfg, network_globals.clone(), &log)?
+            PeerManager::new(peer_manager_cfg, network_globals.clone())?
         };
 
         let connection_limits = {
@@ -535,7 +529,6 @@ impl<P: Preset> Network<P> {
             update_gossipsub_scores,
             gossip_cache,
             local_peer_id,
-            log,
         };
 
         network.start(&config).await?;
@@ -1197,7 +1190,7 @@ impl<P: Preset> Network<P> {
         drop(meta_data_w);
         self.eth2_rpc_mut().update_seq_number(seq_number);
         // Save the updated metadata to disk
-        utils::save_metadata_to_disk(self.network_dir.as_deref(), meta_data, &self.log);
+        utils::save_metadata_to_disk(self.network_dir.as_deref(), meta_data);
     }
 
     /// Sends a Ping request to the peer.

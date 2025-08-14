@@ -14,7 +14,6 @@ use std::{
 
 use futures::FutureExt;
 use libp2p::{swarm::NotifyHandler, PeerId};
-use slog::Logger;
 use tracing::debug;
 use logging::crit;
 use smallvec::SmallVec;
@@ -48,8 +47,6 @@ pub(crate) struct SelfRateLimiter<Id: ReqId, P: Preset> {
     rate_limiter: Option<RateLimiter>,
     /// Requests that are ready to be sent.
     ready_requests: SmallVec<[(PeerId, RPCSend<Id, P>, Duration); 3]>,
-    /// Slog logger.
-    log: Logger,
 }
 
 /// Error returned when the rate limiter does not accept a request.
@@ -66,7 +63,6 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
     pub fn new(
         config: Option<OutboundRateLimiterConfig>,
         fork_context: Arc<ForkContext>,
-        log: Logger,
     ) -> Result<Self, &'static str> {
         debug!(?config, "Using self rate limiting params");
         let rate_limiter = if let Some(c) = config {
@@ -81,7 +77,6 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
             next_peer_request: Default::default(),
             rate_limiter,
             ready_requests: Default::default(),
-            log,
         })
     }
 
@@ -116,7 +111,6 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
             peer_id,
             request_id,
             req,
-            &self.log,
         ) {
             Err((rate_limited_req, wait_time)) => {
                 let key = (peer_id, protocol);
@@ -142,7 +136,6 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         peer_id: PeerId,
         request_id: Id,
         req: RequestType<P>,
-        log: &Logger,
     ) -> Result<RPCSend<Id, P>, (QueuedRequest<Id, P>, Duration)> {
         if let Some(active_request) = active_requests.get(&peer_id) {
             if let Some(count) = active_request.get(&req.protocol()) {
@@ -225,7 +218,6 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
                     peer_id,
                     request_id,
                     req.clone(),
-                    &self.log,
                 ) {
                     Err((_rate_limited_req, wait_time)) => {
                         let key = (peer_id, protocol);
@@ -336,29 +328,15 @@ mod tests {
     use crate::service::api_types::AppRequestId;
     use crate::types::ForkContext;
     use libp2p::PeerId;
-    use slog::{o, Drain};
     use std::num::NonZeroU64;
     use std::sync::Arc;
     use std::time::Duration;
     use types::nonstandard::Phase;
     use types::{config::Config, preset::Mainnet};
 
-    pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
-
-        if enabled {
-            slog::Logger::root(drain.filter_level(level).fuse(), o!())
-        } else {
-            slog::Logger::root(drain.filter(|_| false).fuse(), o!())
-        }
-    }
-
     /// Test that `next_peer_request_ready` correctly maintains the queue.
     #[tokio::test]
     async fn test_next_peer_request_ready() {
-        let log = build_log(slog::Level::Debug, false);
         let config = OutboundRateLimiterConfig(RateLimiterConfig {
             ping_quota: Quota::n_every(NonZeroU64::new(1).unwrap(), 2),
             ..Default::default()
@@ -366,7 +344,7 @@ mod tests {
         let chain_config = Arc::new(Config::mainnet().rapid_upgrade());
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(&chain_config, Phase::Phase0));
         let mut limiter: SelfRateLimiter<AppRequestId, Mainnet> =
-            SelfRateLimiter::new(Some(config), fork_context, log).unwrap();
+            SelfRateLimiter::new(Some(config), fork_context).unwrap();
         let peer_id = PeerId::random();
         for i in 1..=5 {
             let _ = limiter.allows(
@@ -422,11 +400,10 @@ mod tests {
     /// Test that `next_peer_request_ready` correctly maintains the queue when using the self-limiter without rate limiting.
     #[tokio::test]
     async fn test_next_peer_request_ready_concurrent_requests() {
-        let log = build_log(slog::Level::Debug, false);
         let chain_config = Arc::new(Config::mainnet().rapid_upgrade());
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(&chain_config, Phase::Phase0));
         let mut limiter: SelfRateLimiter<AppRequestId, Mainnet> =
-            SelfRateLimiter::new(None, fork_context, log).unwrap();
+            SelfRateLimiter::new(None, fork_context).unwrap();
         let peer_id = PeerId::random();
 
         for i in 1..=5 {
@@ -487,11 +464,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_peer_disconnected() {
-        let log = build_log(slog::Level::Debug, false);
         let chain_config = Arc::new(Config::mainnet().rapid_upgrade());
         let fork_context = Arc::new(ForkContext::dummy::<Mainnet>(&chain_config, Phase::Phase0));
         let mut limiter: SelfRateLimiter<AppRequestId, Mainnet> =
-            SelfRateLimiter::new(None, fork_context, log).unwrap();
+            SelfRateLimiter::new(None, fork_context).unwrap();
         let peer1 = PeerId::random();
         let peer2 = PeerId::random();
 

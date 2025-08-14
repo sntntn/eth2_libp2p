@@ -111,8 +111,6 @@ pub struct PeerManager {
     /// Keeps track of whether the QUIC protocol is enabled or not.
     quic_enabled: bool,
     trusted_peers: HashSet<Enr>,
-    /// The logger associated with the `PeerManager`.
-    log: slog::Logger,
 }
 
 /// The events that the `PeerManager` outputs (requests).
@@ -147,7 +145,6 @@ impl PeerManager {
     pub fn new(
         cfg: config::Config,
         network_globals: Arc<NetworkGlobals>,
-        log: &slog::Logger,
     ) -> Result<Self> {
         let config::Config {
             discovery_enabled,
@@ -177,7 +174,6 @@ impl PeerManager {
             metrics_enabled,
             quic_enabled,
             trusted_peers: Default::default(),
-            log: log.clone(),
         })
     }
 
@@ -1521,8 +1517,8 @@ mod tests {
         });
         let log = build_log(slog::Level::Debug, false);
         let globals =
-            NetworkGlobals::new_test_globals(chain_config, trusted_peers, &log, network_config);
-        PeerManager::new(config, Arc::new(globals), &log).unwrap()
+            NetworkGlobals::new_test_globals(chain_config, trusted_peers, network_config);
+        PeerManager::new(config, Arc::new(globals)).unwrap()
     }
 
     #[tokio::test]
