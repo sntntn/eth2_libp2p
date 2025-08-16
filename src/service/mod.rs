@@ -34,7 +34,6 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::upnp::tokio::Behaviour as Upnp;
 use libp2p::{identify, PeerId, SwarmBuilder};
-//use slog::o;
 use logging::crit;
 use tracing::{debug, error, info, trace, warn};
 use std::num::{NonZeroU8, NonZeroUsize};

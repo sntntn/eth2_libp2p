@@ -17,7 +17,6 @@ use libp2p::swarm::handler::{
 };
 use libp2p::swarm::{ConnectionId, Stream};
 use libp2p::PeerId;
-use slog;
 use logging::{crit};
 use tracing::{ debug, trace};
 use smallvec::SmallVec;
@@ -1099,17 +1098,6 @@ where
                 proto: req.versioned_protocol().protocol(),
                 id,
             }));
-    }
-}
-
-impl slog::Value for SubstreamId {
-    fn serialize(
-        &self,
-        record: &slog::Record,
-        key: slog::Key,
-        serializer: &mut dyn slog::Serializer,
-    ) -> slog::Result {
-        slog::Value::serialize(&self.0, record, key, serializer)
     }
 }
 

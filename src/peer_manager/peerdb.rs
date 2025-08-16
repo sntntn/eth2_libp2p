@@ -1351,20 +1351,7 @@ impl BannedPeersCount {
 mod tests {
     use super::*;
     use libp2p::core::multiaddr::Protocol;
-    use slog::{o, Drain};
     use std::net::{Ipv4Addr, Ipv6Addr};
-
-    pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
-
-        if enabled {
-            slog::Logger::root(drain.filter_level(level).fuse(), o!())
-        } else {
-            slog::Logger::root(drain.filter(|_| false).fuse(), o!())
-        }
-    }
 
     fn add_score(db: &mut PeerDB, peer_id: &PeerId, score: f64) {
         if let Some(info) = db.peer_info_mut(peer_id) {
@@ -1379,7 +1366,6 @@ mod tests {
     }
 
     fn get_db() -> PeerDB {
-        let log = build_log(slog::Level::Debug, false);
         let config = Arc::new(ChainConfig::mainnet());
         PeerDB::new(config, vec![], false)
     }
@@ -2079,7 +2065,6 @@ mod tests {
     #[allow(clippy::float_cmp)]
     fn test_trusted_peers_score() {
         let trusted_peer = PeerId::random();
-        let log = build_log(slog::Level::Debug, false);
         let chain_config = Arc::new(ChainConfig::mainnet());
         let mut pdb: PeerDB = PeerDB::new(chain_config, vec![trusted_peer], false);
 
@@ -2104,7 +2089,6 @@ mod tests {
     #[test]
     fn test_disable_peer_scoring() {
         let peer = PeerId::random();
-        let log = build_log(slog::Level::Debug, false);
         let chain_config = Arc::new(ChainConfig::mainnet());
         let mut pdb: PeerDB = PeerDB::new(chain_config, vec![], true);
 

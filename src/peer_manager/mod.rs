@@ -1482,20 +1482,7 @@ enum ConnectingType {
 mod tests {
     use super::*;
     use crate::NetworkConfig;
-    use slog::{o, Drain};
     use types::config::Config as ChainConfig;
-
-    pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
-
-        if enabled {
-            slog::Logger::root(drain.filter_level(level).fuse(), o!())
-        } else {
-            slog::Logger::root(drain.filter(|_| false).fuse(), o!())
-        }
-    }
 
     async fn build_peer_manager(target_peer_count: usize) -> PeerManager {
         build_peer_manager_with_trusted_peers(vec![], target_peer_count).await
@@ -1515,7 +1502,6 @@ mod tests {
             target_peers: target_peer_count,
             ..Default::default()
         });
-        let log = build_log(slog::Level::Debug, false);
         let globals =
             NetworkGlobals::new_test_globals(chain_config, trusted_peers, network_config);
         PeerManager::new(config, Arc::new(globals)).unwrap()

@@ -1188,20 +1188,7 @@ mod tests {
         types::EnrAttestationBitfield,
     };
     use libp2p::identity::secp256k1;
-    use slog::{o, Drain};
     use std_ext::ArcExt as _;
-
-    pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
-
-        if enabled {
-            slog::Logger::root(drain.filter_level(level).fuse(), o!())
-        } else {
-            slog::Logger::root(drain.filter(|_| false).fuse(), o!())
-        }
-    }
 
     async fn build_discovery() -> Discovery {
         let chain_config = Arc::new(ChainConfig::mainnet());
