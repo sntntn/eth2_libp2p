@@ -66,8 +66,6 @@ async-channel = { workspace = true }
 exit-future = { version = '0.2.0' }
 quickcheck = { workspace = true }
 quickcheck_macros = { workspace = true }
-slog-async = { workspace = true }
-slog-term = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
