@@ -5,7 +5,8 @@ use eth2_libp2p::Multiaddr;
 use eth2_libp2p::TaskExecutor;
 use eth2_libp2p::{Context, Enr, EnrExt};
 use eth2_libp2p::{NetworkConfig, NetworkEvent};
-use slog::{debug, error, o, Drain};
+use tracing::{debug, error, info_span, Instrument};
+use tracing_subscriber::EnvFilter;
 use std::sync::Arc;
 use std_ext::ArcExt as _;
 use types::{config::Config as ChainConfig, nonstandard::Phase, preset::Preset};
@@ -28,14 +29,12 @@ impl<P: Preset> std::ops::DerefMut for Libp2pInstance<P> {
 }
 
 #[allow(unused)]
-pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
+pub fn build_tracing_subscriber(level: &str, enabled: bool) {
     if enabled {
-        slog::Logger::root(drain.filter_level(level).fuse(), o!())
-    } else {
-        slog::Logger::root(drain.filter(|_| false).fuse(), o!())
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::try_new(level).unwrap())
+            .try_init()
+            .unwrap();
     }
 }
 
@@ -70,14 +69,13 @@ pub async fn build_libp2p_instance<P: Preset>(
     _service_name: String,
     disable_peer_scoring: bool,
     inbound_rate_limiter: Option<InboundRateLimiterConfig>,
-    log: slog::Logger,
     fork_name: Phase,
 ) -> Libp2pInstance<P> {
     let config = build_config(boot_nodes, disable_peer_scoring, inbound_rate_limiter);
     // launch libp2p service
 
     let (shutdown_tx, _) = futures::channel::mpsc::channel(1);
-    let executor = TaskExecutor::new(log.clone(), shutdown_tx);
+    let executor = TaskExecutor::new( shutdown_tx);
     let libp2p_context = Context {
         chain_config: chain_config.clone_arc(),
         config,
@@ -87,7 +85,7 @@ pub async fn build_libp2p_instance<P: Preset>(
     };
 
     Libp2pInstance(
-        LibP2PService::new(chain_config.clone(), executor, libp2p_context, &log)
+        LibP2PService::new(chain_config.clone(), executor, libp2p_context)
             .await
             .expect("should build libp2p instance")
             .0,
@@ -110,14 +108,11 @@ pub enum Protocol {
 #[allow(dead_code)]
 pub async fn build_node_pair<P: Preset>(
     chain_config: &Arc<ChainConfig>,
-    log: &slog::Logger,
     fork_name: Phase,
     protocol: Protocol,
     disable_peer_scoring: bool,
     inbound_rate_limiter: Option<InboundRateLimiterConfig>,
 ) -> (Libp2pInstance<P>, Libp2pInstance<P>) {
-    let sender_log = log.new(o!("who" => "sender"));
-    let receiver_log = log.new(o!("who" => "receiver"));
 
     let mut sender = build_libp2p_instance::<P>(
         chain_config,
@@ -125,7 +120,6 @@ pub async fn build_node_pair<P: Preset>(
         "sender".to_string(),
         disable_peer_scoring,
         inbound_rate_limiter.clone(),
-        sender_log,
         fork_name,
     )
     .await;
@@ -135,7 +129,6 @@ pub async fn build_node_pair<P: Preset>(
         "receiver".to_string(),
         disable_peer_scoring,
         inbound_rate_limiter,
-        receiver_log,
         fork_name,
     )
     .await;
@@ -163,7 +156,9 @@ pub async fn build_node_pair<P: Preset>(
                 }
             }
         }
-    };
+    }
+    .instrument(info_span!("Sender", who = "sender"));
+
     let receiver_fut = async {
         loop {
             if let NetworkEvent::NewListenAddr(addr) = receiver.next_event().await {
@@ -185,7 +180,8 @@ pub async fn build_node_pair<P: Preset>(
                 }
             }
         }
-    };
+    }
+    .instrument(info_span!("Receiver", who = "receiver"));
 
     let joined = futures::future::join(sender_fut, receiver_fut);
 
@@ -193,9 +189,9 @@ pub async fn build_node_pair<P: Preset>(
 
     match sender.testing_dial(receiver_multiaddr.clone()) {
         Ok(()) => {
-            debug!(log, "Sender dialed receiver"; "address" => format!("{:?}", receiver_multiaddr))
+            debug!(address = ?receiver_multiaddr, "Sender dialed receiver")
         }
-        Err(_) => error!(log, "Dialing failed"),
+        Err(_) => error!("Dialing failed"),
     };
     (sender, receiver)
 }
@@ -204,7 +200,6 @@ pub async fn build_node_pair<P: Preset>(
 #[allow(dead_code)]
 pub async fn build_linear<P: Preset>(
     chain_config: &Arc<ChainConfig>,
-    log: slog::Logger,
     n: usize,
     fork_name: Phase,
 ) -> Vec<Libp2pInstance<P>> {
@@ -217,7 +212,6 @@ pub async fn build_linear<P: Preset>(
                 "linear".to_string(),
                 false,
                 None,
-                log.clone(),
                 fork_name,
             )
             .await,
@@ -230,8 +224,8 @@ pub async fn build_linear<P: Preset>(
         .collect();
     for i in 0..n - 1 {
         match nodes[i].testing_dial(multiaddrs[i + 1].clone()) {
-            Ok(()) => debug!(log, "Connected"),
-            Err(_) => error!(log, "Failed to connect"),
+            Ok(()) => debug!("Connected"),
+            Err(_) => error!("Failed to connect"),
         };
     }
     nodes

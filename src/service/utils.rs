@@ -12,7 +12,7 @@ use libp2p::core::{multiaddr::Multiaddr, muxing::StreamMuxerBox, transport::Boxe
 use libp2p::identity::{secp256k1, Keypair};
 use libp2p::{core, noise, yamux, PeerId, Transport};
 use prometheus_client::registry::Registry;
-use slog::{debug, warn};
+use tracing::{debug, warn};
 use ssz::SszReadDefault as _;
 use std::collections::HashSet;
 use std::fs::File;
@@ -111,7 +111,7 @@ fn keypair_from_bytes(mut bytes: Vec<u8>) -> Result<Keypair> {
 /// generated and is then saved to disk.
 ///
 /// Currently only secp256k1 keys are allowed, as these are the only keys supported by discv5.
-pub fn load_private_key(config: &NetworkConfig, log: &slog::Logger) -> Keypair {
+pub fn load_private_key(config: &NetworkConfig) -> Keypair {
     let mut network_key_f = None;
 
     if let Some(network_dir) = config.network_dir.as_ref() {
@@ -126,15 +126,15 @@ pub fn load_private_key(config: &NetworkConfig, log: &slog::Logger) -> Keypair {
         if let Ok(mut network_key_file) = File::open(network_key_f.clone()) {
             let mut key_bytes: Vec<u8> = Vec::with_capacity(36);
             match network_key_file.read_to_end(&mut key_bytes) {
-                Err(_) => debug!(log, "Could not read network key file"),
+                Err(_) => debug!("Could not read network key file"),
                 Ok(_) => {
                     // only accept secp256k1 keys for now
                     if let Ok(secret_key) = secp256k1::SecretKey::try_from_bytes(&mut key_bytes) {
                         let kp: secp256k1::Keypair = secret_key.into();
-                        debug!(log, "Loaded network key from disk.");
+                        debug!("Loaded network key from disk.");
                         return kp.into();
                     } else {
-                        debug!(log, "Network key file is not a valid secp256k1 key");
+                        debug!("Network key file is not a valid secp256k1 key");
                     }
                 }
             }
@@ -151,12 +151,12 @@ pub fn load_private_key(config: &NetworkConfig, log: &slog::Logger) -> Keypair {
             .and_then(|mut f| f.write_all(&local_private_key.secret().to_bytes()))
         {
             Ok(_) => {
-                debug!(log, "New network key generated and written to disk");
+                debug!("New network key generated and written to disk");
             }
             Err(e) => {
                 warn!(
-                    log,
-                    "Could not write node key to file: {:?}. error: {}", network_key_f, e
+                    "Could not write node key to file: {:?}. error: {}",
+                    network_key_f, e
                 );
             }
         }
@@ -185,7 +185,6 @@ pub fn strip_peer_id(addr: &mut Multiaddr) {
 pub fn load_or_build_metadata(
     network_dir: Option<&Path>,
     custody_subnet_count: Option<u64>,
-    log: &slog::Logger,
 ) -> MetaData {
     // We load a V2 metadata version by default (regardless of current fork)
     // since a V2 metadata can be converted to V1. The RPC encoder is responsible
@@ -213,7 +212,7 @@ pub fn load_or_build_metadata(
                         {
                             meta_data.seq_number += 1;
                         }
-                        debug!(log, "Loaded metadata from disk");
+                        debug!("Loaded metadata from disk");
                     }
                     Err(_) => {
                         match MetaDataV1::from_ssz_default(&metadata_ssz) {
@@ -221,13 +220,12 @@ pub fn load_or_build_metadata(
                                 let persisted_metadata = MetaData::V1(persisted_metadata);
                                 // Increment seq number as the persisted metadata version is updated
                                 meta_data.seq_number = persisted_metadata.seq_number() + 1;
-                                debug!(log, "Loaded metadata from disk");
+                                debug!("Loaded metadata from disk");
                             }
                             Err(e) => {
                                 debug!(
-                                    log,
-                                    "Metadata from file could not be decoded";
-                                    "error" => ?e,
+                                    error = ?e,
+                                    "Metadata from file could not be decoded"
                                 );
                             }
                         }
@@ -249,8 +247,8 @@ pub fn load_or_build_metadata(
         MetaData::V2(meta_data)
     };
 
-    debug!(log, "Metadata sequence number"; "seq_num" => meta_data.seq_number());
-    save_metadata_to_disk(network_dir, meta_data.clone(), log);
+    debug!(seq_num = meta_data.seq_number(), "Metadata sequence number");
+    save_metadata_to_disk(network_dir, meta_data.clone());
     meta_data
 }
 
@@ -302,9 +300,9 @@ pub(crate) fn create_whitelist_filter(
 }
 
 /// Persist metadata to disk
-pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData, log: &slog::Logger) {
+pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData) {
     let Some(dir) = dir else {
-        debug!(log, "Skipping Metadata writing to disk");
+        debug!("Skipping Metadata writing to disk");
         return;
     };
 
@@ -323,14 +321,13 @@ pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData, log:
 
     match write_to_disk() {
         Ok(_) => {
-            debug!(log, "Metadata written to disk");
+            debug!("Metadata written to disk");
         }
         Err(e) => {
             warn!(
-                log,
-                "Could not write metadata to disk";
-                "file" => format!("{:?}{:?}", dir, METADATA_FILENAME),
-                "error" => %e
+                file = format!("{:?}{:?}", dir, METADATA_FILENAME),
+                error = %e,
+                "Could not write metadata to disk"
             );
         }
     }

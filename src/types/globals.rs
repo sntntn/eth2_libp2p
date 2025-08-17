@@ -49,7 +49,6 @@ impl NetworkGlobals {
         trusted_peers: Vec<PeerId>,
         disable_peer_scoring: bool,
         target_subnet_peers: usize,
-        log: &slog::Logger,
         network_config: Arc<NetworkConfig>,
     ) -> Self {
         let (sampling_subnets, sampling_columns) = if config.is_eip7594_fork_epoch_set() {
@@ -86,7 +85,6 @@ impl NetworkGlobals {
                 config,
                 trusted_peers,
                 disable_peer_scoring,
-                log,
             )),
             gossipsub_subscriptions: RwLock::new(HashSet::new()),
             sync_state: RwLock::new(SyncState::Stalled),
@@ -193,7 +191,6 @@ impl NetworkGlobals {
     pub fn new_test_globals(
         chain_config: Arc<ChainConfig>,
         trusted_peers: Vec<PeerId>,
-        log: &slog::Logger,
         network_config: Arc<NetworkConfig>,
     ) -> NetworkGlobals {
         let metadata = MetaData::V3(MetaDataV3 {
@@ -207,7 +204,6 @@ impl NetworkGlobals {
             chain_config,
             trusted_peers,
             metadata,
-            log,
             network_config,
         )
     }
@@ -216,7 +212,6 @@ impl NetworkGlobals {
         chain_config: Arc<ChainConfig>,
         trusted_peers: Vec<PeerId>,
         metadata: MetaData,
-        log: &slog::Logger,
         network_config: Arc<NetworkConfig>,
     ) -> NetworkGlobals {
         use crate::CombinedKeyExt;
@@ -230,7 +225,6 @@ impl NetworkGlobals {
             trusted_peers,
             false,
             3,
-            log,
             network_config,
         )
     }

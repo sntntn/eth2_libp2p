@@ -7,7 +7,8 @@ use crate::types::ForkContext;
 use crate::PeerId;
 use futures::FutureExt;
 use libp2p::swarm::ConnectionId;
-use slog::{crit, debug, Logger};
+use tracing::debug;
+use logging::crit;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -35,8 +36,6 @@ pub(super) struct ResponseLimiter<P: Preset> {
     delayed_responses: HashMap<(PeerId, Protocol), VecDeque<QueuedResponse<P>>>,
     /// The delay required to allow a peer's outbound response per protocol.
     next_response: DelayQueue<(PeerId, Protocol)>,
-    /// Slog logger.
-    log: Logger,
 }
 
 impl<P: Preset> ResponseLimiter<P> {
@@ -44,13 +43,11 @@ impl<P: Preset> ResponseLimiter<P> {
     pub fn new(
         config: InboundRateLimiterConfig,
         fork_context: Arc<ForkContext>,
-        log: Logger,
     ) -> Result<Self, &'static str> {
         Ok(ResponseLimiter {
             limiter: RPCRateLimiter::new_with_config(config.0, fork_context)?,
             delayed_responses: HashMap::new(),
             next_response: DelayQueue::new(),
-            log,
         })
     }
 
@@ -66,13 +63,7 @@ impl<P: Preset> ResponseLimiter<P> {
     ) -> bool {
         // First check that there are not already other responses waiting to be sent.
         if let Some(queue) = self.delayed_responses.get_mut(&(peer_id, protocol)) {
-            debug!(
-                self.log,
-                "Response rate limiting since there are already other responses waiting to be sent";
-                "peer_id" => %peer_id,
-                "protocol" => %protocol,
-            );
-
+            debug!(%peer_id, %protocol, "Response rate limiting since there are already other responses waiting to be sent");
             queue.push_back(QueuedResponse {
                 peer_id,
                 connection_id,
@@ -89,7 +80,6 @@ impl<P: Preset> ResponseLimiter<P> {
             peer_id,
             response.clone(),
             protocol,
-            &self.log,
         ) {
             self.delayed_responses
                 .entry((peer_id, protocol))
@@ -116,7 +106,6 @@ impl<P: Preset> ResponseLimiter<P> {
         peer_id: PeerId,
         response: RpcResponse<P>,
         protocol: Protocol,
-        log: &Logger,
     ) -> Result<(), Duration> {
         match limiter.allows(&peer_id, &(response.clone(), protocol)) {
             Ok(()) => Ok(()),
@@ -125,20 +114,13 @@ impl<P: Preset> ResponseLimiter<P> {
                     // This should never happen with default parameters. Let's just send the response.
                     // Log a crit since this is a config issue.
                     crit!(
-                        log,
-                        "Response rate limiting error for a batch that will never fit. Sending response anyway. Check configuration parameters.";
-                        "protocol" => %protocol,
+                        %protocol,
+                        "Response rate limiting error for a batch that will never fit. Sending response anyway. Check configuration parameters."
                     );
                     Ok(())
                 }
                 RateLimitedErr::TooSoon(wait_time) => {
-                    debug!(
-                        log,
-                        "Response rate limiting";
-                        "peer_id" => %peer_id,
-                        "protocol" => %protocol,
-                        "wait_time_ms" => wait_time.as_millis(),
-                    );
+                    debug!(%peer_id, %protocol, wait_time_ms = wait_time.as_millis(), "Response rate limiting");
                     Err(wait_time)
                 }
             },
@@ -167,7 +149,6 @@ impl<P: Preset> ResponseLimiter<P> {
                         response.peer_id,
                         response.response.clone(),
                         response.protocol,
-                        &self.log,
                     ) {
                         Ok(()) => {
                             metrics::observe_duration(
