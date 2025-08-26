@@ -1,7 +1,6 @@
 use futures::channel::mpsc::Sender;
 use futures::prelude::*;
-use logging::crit;
-use tracing::trace;
+use logging::{crit, trace_with_peers};
 
 /// Provides a reason when client is shut down.
 #[derive(Copy, Clone, Debug)]
@@ -80,7 +79,7 @@ impl TaskExecutor {
         name: &'static str,
     ) -> tokio::task::JoinHandle<R> {
 
-        let future = task.inspect(move |_| trace!(task = name, "Async task completed"));
+        let future = task.inspect(move |_| trace_with_peers!(task = name, "Async task completed"));
 
         tokio::spawn(future)
     }

@@ -7,7 +7,7 @@ use crate::types::ForkContext;
 use crate::PeerId;
 use futures::FutureExt;
 use libp2p::swarm::ConnectionId;
-use tracing::debug;
+use logging::debug_with_peers;
 use logging::crit;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
@@ -63,7 +63,7 @@ impl<P: Preset> ResponseLimiter<P> {
     ) -> bool {
         // First check that there are not already other responses waiting to be sent.
         if let Some(queue) = self.delayed_responses.get_mut(&(peer_id, protocol)) {
-            debug!(%peer_id, %protocol, "Response rate limiting since there are already other responses waiting to be sent");
+            debug_with_peers!(%peer_id, %protocol, "Response rate limiting since there are already other responses waiting to be sent");
             queue.push_back(QueuedResponse {
                 peer_id,
                 connection_id,
@@ -120,7 +120,7 @@ impl<P: Preset> ResponseLimiter<P> {
                     Ok(())
                 }
                 RateLimitedErr::TooSoon(wait_time) => {
-                    debug!(%peer_id, %protocol, wait_time_ms = wait_time.as_millis(), "Response rate limiting");
+                    debug_with_peers!(%peer_id, %protocol, wait_time_ms = wait_time.as_millis(), "Response rate limiting");
                     Err(wait_time)
                 }
             },

@@ -14,8 +14,7 @@ use std::{
 
 use futures::FutureExt;
 use libp2p::{swarm::NotifyHandler, PeerId};
-use tracing::debug;
-use logging::crit;
+use logging::{debug_with_peers, crit};
 use smallvec::SmallVec;
 use tokio_util::time::DelayQueue;
 use types::preset::Preset;
@@ -64,7 +63,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         config: Option<OutboundRateLimiterConfig>,
         fork_context: Arc<ForkContext>,
     ) -> Result<Self, &'static str> {
-        debug!(?config, "Using self rate limiting params");
+        debug_with_peers!(?config, "Using self rate limiting params");
         let rate_limiter = if let Some(c) = config {
             Some(RateLimiter::new_with_config(c.0, fork_context)?)
         } else {
@@ -92,7 +91,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         let protocol = req.versioned_protocol().protocol();
         // First check that there are not already other requests waiting to be sent.
         if let Some(queued_requests) = self.delayed_requests.get_mut(&(peer_id, protocol)) {
-            debug!(
+            debug_with_peers!(
                 %peer_id, 
                 protocol = %req.protocol(), 
                 "Self rate limiting since there are already other requests waiting to be sent"
@@ -140,7 +139,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         if let Some(active_request) = active_requests.get(&peer_id) {
             if let Some(count) = active_request.get(&req.protocol()) {
                 if *count >= MAX_CONCURRENT_REQUESTS {
-                    debug!(
+                    debug_with_peers!(
                         %peer_id,
                         protocol = %req.protocol(),
                         "Self rate limiting due to the number of concurrent requests"
@@ -171,7 +170,7 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
                             );
                         }
                         RateLimitedErr::TooSoon(wait_time) => {
-                            debug!(
+                            debug_with_peers!(
                                 protocol = %protocol.protocol(), 
                                 wait_time_ms = wait_time.as_millis(), 
                                 %peer_id, 

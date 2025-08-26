@@ -1,7 +1,7 @@
 //! The subnet predicate used for searching for a particular subnet.
 use super::*;
 use eip_7594::get_custody_groups;
-use tracing::trace;
+use logging::trace_with_peers;
 use ssz::Uint256;
 use std::sync::Arc;
 use types::config::Config as ChainConfig;
@@ -42,7 +42,7 @@ pub fn subnet_predicate(
         });
 
         if !predicate {
-            trace!(
+            trace_with_peers!(
                 peer_id = %enr.peer_id(),
                 "Peer found but not on any of the desired subnets"
             );

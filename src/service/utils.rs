@@ -12,7 +12,7 @@ use libp2p::core::{multiaddr::Multiaddr, muxing::StreamMuxerBox, transport::Boxe
 use libp2p::identity::{secp256k1, Keypair};
 use libp2p::{core, noise, yamux, PeerId, Transport};
 use prometheus_client::registry::Registry;
-use tracing::{debug, warn};
+use logging::{debug_with_peers, warn_with_peers};
 use ssz::SszReadDefault as _;
 use std::collections::HashSet;
 use std::fs::File;
@@ -126,15 +126,15 @@ pub fn load_private_key(config: &NetworkConfig) -> Keypair {
         if let Ok(mut network_key_file) = File::open(network_key_f.clone()) {
             let mut key_bytes: Vec<u8> = Vec::with_capacity(36);
             match network_key_file.read_to_end(&mut key_bytes) {
-                Err(_) => debug!("Could not read network key file"),
+                Err(_) => debug_with_peers!("Could not read network key file"),
                 Ok(_) => {
                     // only accept secp256k1 keys for now
                     if let Ok(secret_key) = secp256k1::SecretKey::try_from_bytes(&mut key_bytes) {
                         let kp: secp256k1::Keypair = secret_key.into();
-                        debug!("Loaded network key from disk.");
+                        debug_with_peers!("Loaded network key from disk.");
                         return kp.into();
                     } else {
-                        debug!("Network key file is not a valid secp256k1 key");
+                        debug_with_peers!("Network key file is not a valid secp256k1 key");
                     }
                 }
             }
@@ -151,10 +151,10 @@ pub fn load_private_key(config: &NetworkConfig) -> Keypair {
             .and_then(|mut f| f.write_all(&local_private_key.secret().to_bytes()))
         {
             Ok(_) => {
-                debug!("New network key generated and written to disk");
+                debug_with_peers!("New network key generated and written to disk");
             }
             Err(e) => {
-                warn!(
+                warn_with_peers!(
                     "Could not write node key to file: {:?}. error: {}",
                     network_key_f, e
                 );
@@ -212,7 +212,7 @@ pub fn load_or_build_metadata(
                         {
                             meta_data.seq_number += 1;
                         }
-                        debug!("Loaded metadata from disk");
+                        debug_with_peers!("Loaded metadata from disk");
                     }
                     Err(_) => {
                         match MetaDataV1::from_ssz_default(&metadata_ssz) {
@@ -220,10 +220,10 @@ pub fn load_or_build_metadata(
                                 let persisted_metadata = MetaData::V1(persisted_metadata);
                                 // Increment seq number as the persisted metadata version is updated
                                 meta_data.seq_number = persisted_metadata.seq_number() + 1;
-                                debug!("Loaded metadata from disk");
+                                debug_with_peers!("Loaded metadata from disk");
                             }
                             Err(e) => {
-                                debug!(
+                                debug_with_peers!(
                                     error = ?e,
                                     "Metadata from file could not be decoded"
                                 );
@@ -247,7 +247,7 @@ pub fn load_or_build_metadata(
         MetaData::V2(meta_data)
     };
 
-    debug!(seq_num = meta_data.seq_number(), "Metadata sequence number");
+    debug_with_peers!(seq_num = meta_data.seq_number(), "Metadata sequence number");
     save_metadata_to_disk(network_dir, meta_data.clone());
     meta_data
 }
@@ -302,7 +302,7 @@ pub(crate) fn create_whitelist_filter(
 /// Persist metadata to disk
 pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData) {
     let Some(dir) = dir else {
-        debug!("Skipping Metadata writing to disk");
+        debug_with_peers!("Skipping Metadata writing to disk");
         return;
     };
 
@@ -321,10 +321,10 @@ pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData) {
 
     match write_to_disk() {
         Ok(_) => {
-            debug!("Metadata written to disk");
+            debug_with_peers!("Metadata written to disk");
         }
         Err(e) => {
-            warn!(
+            warn_with_peers!(
                 file = format!("{:?}{:?}", dir, METADATA_FILENAME),
                 error = %e,
                 "Could not write metadata to disk"

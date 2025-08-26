@@ -34,7 +34,7 @@ pub use libp2p::{
 };
 use lru::LruCache;
 use logging::crit;
-use tracing::{debug, error, info, trace, warn};
+use logging::{debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers};
 use ssz::SszWrite as _;
 use std::{
     collections::{HashMap, VecDeque},
@@ -209,7 +209,7 @@ impl Discovery {
         let local_enr = network_globals.local_enr.read().clone();
         let local_node_id = local_enr.node_id();
 
-        info!(
+        info_with_peers!(
             enr = local_enr.to_base64(), seq = local_enr.seq(), id = %local_enr.node_id(),
             ip4 = ?local_enr.ip4(), udp4= ?local_enr.udp4(), tcp4 = ?local_enr.tcp4(), tcp6 = ?local_enr.tcp6(), udp6 = ?local_enr.udp6(),
             quic4 = ?local_enr.quic4(), quic6 = ?local_enr.quic6(),
@@ -228,7 +228,7 @@ impl Discovery {
                 // If we are a boot node, ignore adding it to the routing table
                 continue;
             }
-            debug!(
+            debug_with_peers!(
                 node_id = %bootnode_enr.node_id(),
                 peer_id = %bootnode_enr.peer_id(),
                 ip = ?bootnode_enr.ip4(),
@@ -239,7 +239,7 @@ impl Discovery {
             );
             let repr = bootnode_enr.to_string();
             let _ = discv5.add_enr(bootnode_enr).map_err(|e| {
-                error!(
+                error_with_peers!(
                     addr = repr,
                     error = e.to_string(),
                     "Could not add peer to the local routing table"
@@ -250,14 +250,14 @@ impl Discovery {
         // Start the discv5 service and obtain an event stream
         let event_stream = if !config.disable_discovery {
             discv5.start().map_err(Error::msg).await?;
-            debug!("Discovery service started");
+            debug_with_peers!("Discovery service started");
             EventStream::Awaiting(Box::pin(discv5.event_stream()))
         } else {
             EventStream::InActive
         };
 
         if !config.boot_nodes_multiaddr.is_empty() {
-            info!("Contacting Multiaddr boot-nodes for their ENR");
+            info_with_peers!("Contacting Multiaddr boot-nodes for their ENR");
         }
 
         // get futures for requesting the Enrs associated to these multiaddr and wait for their
@@ -278,7 +278,7 @@ impl Discovery {
         while let Some((result, original_addr)) = fut_coll.next().await {
             match result {
                 Ok(enr) => {
-                    debug!(
+                    debug_with_peers!(
                         node_id = %enr.node_id(),
                         peer_id = %enr.peer_id(),
                         ip4 = ?enr.ip4(),
@@ -288,7 +288,7 @@ impl Discovery {
                         "Adding node to routing table"
                     );
                     let _ = discv5.add_enr(enr).map_err(|e| {
-                        error!(
+                        error_with_peers!(
                             addr = original_addr.to_string(),
                             error = e.to_string(),
                             "Could not add peer to the local routing table"
@@ -296,7 +296,7 @@ impl Discovery {
                     });
                 }
                 Err(e) => {
-                    error!(
+                    error_with_peers!(
                         multiaddr = original_addr.to_string(),
                         error = e.to_string(),
                         "Error getting mapping to ENR"
@@ -354,7 +354,7 @@ impl Discovery {
         }
         // Immediately start a FindNode query
         let target_peers = std::cmp::min(FIND_NODE_QUERY_CLOSEST_PEERS, target_peers);
-        debug!(target_peers, "Starting a peer discovery request");
+        debug_with_peers!(target_peers, "Starting a peer discovery request");
         self.find_peer_active = true;
         self.start_query(QueryType::FindPeers, target_peers, |_| true);
     }
@@ -365,7 +365,7 @@ impl Discovery {
         if !self.started {
             return;
         }
-        trace!(
+        trace_with_peers!(
             subnets = ?subnets_to_discover.iter().map(|s| s.subnet).collect::<Vec<_>>(),
             "Starting discovery query for subnets"
         );
@@ -380,7 +380,7 @@ impl Discovery {
         self.cached_enrs.put(enr.peer_id(), enr.clone());
 
         if let Err(e) = self.discv5.add_enr(enr) {
-            debug!(
+            debug_with_peers!(
                 error = %e,
                 "Could not add peer to the local routing table"
             )
@@ -551,7 +551,7 @@ impl Discovery {
             format!("{:?}", enr_fork_id.next_fork_epoch)
         };
 
-        info!(
+        info_with_peers!(
             fork_digest = ?enr_fork_id.fork_digest,
             next_fork_version = ?enr_fork_id.next_fork_version,
             next_fork_epoch = next_fork_epoch_log,
@@ -566,7 +566,7 @@ impl Discovery {
         };
 
         if let Err(error) = update() {
-            warn!(
+            warn_with_peers!(
                     error = ?error,
                     "Could not update eth2 ENR field"
                 )
@@ -622,7 +622,7 @@ impl Discovery {
     fn add_subnet_query(&mut self, subnet: Subnet, min_ttl: Option<Instant>, retries: usize) {
         // remove the entry and complete the query if greater than the maximum search count
         if retries > MAX_DISCOVERY_RETRY {
-            debug!("Subnet peer discovery did not find sufficient peers. Reached max retry limit");
+            debug_with_peers!("Subnet peer discovery did not find sufficient peers. Reached max retry limit");
             return;
         }
 
@@ -643,7 +643,7 @@ impl Discovery {
         }
         if !found {
             // update the metrics and insert into the queue.
-            trace!(?subnet, retries, "Queuing subnet query");
+            trace_with_peers!(?subnet, retries, "Queuing subnet query");
             self.queued_queries.push_back(SubnetQuery {
                 subnet,
                 min_ttl,
@@ -714,7 +714,7 @@ impl Discovery {
                     .count();
 
                 if peers_on_subnet >= self.network_globals.target_subnet_peers {
-                    debug!(
+                    debug_with_peers!(
                         reason = "Already connected to desired peers",
                         connected_peers_on_subnet = peers_on_subnet,
                         target_subnet_peers = self.network_globals.target_subnet_peers,
@@ -727,7 +727,7 @@ impl Discovery {
                     .network_globals
                     .target_subnet_peers
                     .saturating_sub(peers_on_subnet);
-                trace!(
+                trace_with_peers!(
                     ?subnet_query,
                     connected_peers_on_subnet = peers_on_subnet,
                     peers_to_find = target_peers,
@@ -745,7 +745,7 @@ impl Discovery {
             let subnet_predicate =
                 subnet_predicate(self.chain_config.clone(), filtered_subnets);
 
-            debug!(
+            debug_with_peers!(
                 subnets = ?filtered_subnet_queries,
                 "Starting grouped subnet query"
             );
@@ -812,10 +812,10 @@ impl Discovery {
                 self.find_peer_active = false;
                 match query.result {
                     Ok(r) if r.is_empty() => {
-                        debug!("Discovery query yielded no results.");
+                        debug_with_peers!("Discovery query yielded no results.");
                     }
                     Ok(r) => {
-                        debug!(peers_found = r.len(), "Discovery query completed");
+                        debug_with_peers!(peers_found = r.len(), "Discovery query completed");
                         let results = r
                             .into_iter()
                             .map(|enr| {
@@ -827,7 +827,7 @@ impl Discovery {
                         return Some(results);
                     }
                     Err(e) => {
-                        warn!(error = %e, "Discovery query failed");
+                        warn_with_peers!(error = %e, "Discovery query failed");
                     }
                 }
             }
@@ -836,7 +836,7 @@ impl Discovery {
                     queries.iter().map(|query| query.subnet).collect();
                 match query.result {
                     Ok(r) if r.is_empty() => {
-                        debug!(
+                        debug_with_peers!(
                             ?subnets_searched_for,
                             "Grouped subnet discovery query yielded no results."
                         );                        queries.iter().for_each(|query| {
@@ -844,7 +844,7 @@ impl Discovery {
                         })
                     }
                     Ok(r) => {
-                        debug!(
+                        debug_with_peers!(
                             peers_found = r.len(),
                             ?subnets_searched_for,
                             "Peer grouped subnet discovery request completed"
@@ -926,7 +926,7 @@ impl Discovery {
                         }
                     }
                     Err(e) => {
-                        warn!(?subnets_searched_for, error = %e,"Grouped subnet discovery query failed");
+                        warn_with_peers!(?subnets_searched_for, error = %e,"Grouped subnet discovery query failed");
                     }
                 }
             }
@@ -1005,7 +1005,7 @@ impl NetworkBehaviour for Discovery {
                 if let Poll::Ready(event_stream) = fut.poll_unpin(cx) {
                     match event_stream {
                         Ok(stream) => {
-                            debug!("Discv5 event stream ready");
+                            debug_with_peers!("Discv5 event stream ready");
                             self.event_stream = EventStream::Present(stream);
                         }
                         Err(e) => {
@@ -1035,7 +1035,7 @@ impl NetworkBehaviour for Discovery {
                             */
                         }
                         discv5::Event::SocketUpdated(socket_addr) => {
-                            info!(ip = %socket_addr.ip(), udp_port = %socket_addr.port(),"Address updated");
+                            info_with_peers!(ip = %socket_addr.ip(), udp_port = %socket_addr.port(),"Address updated");
                             metrics::inc_counter(&metrics::ADDRESS_UPDATE_COUNT);
                             // Discv5 will have updated our local ENR. We save the updated version
                             // to disk.
@@ -1071,7 +1071,7 @@ impl NetworkBehaviour for Discovery {
                 let addr = ev.addr;
                 let listener_id = ev.listener_id;
 
-                trace!(
+                trace_with_peers!(
                     ?listener_id,
                     ?addr,
                     "Received NewListenAddr event from swarm"
@@ -1083,7 +1083,7 @@ impl NetworkBehaviour for Discovery {
                     Some(Protocol::Ip4(_)) => match (addr_iter.next(), addr_iter.next()) {
                         (Some(Protocol::Tcp(port)), None) => {
                             if !self.update_ports.tcp4 {
-                                debug!(multiaddr = ?addr, "Skipping ENR update");
+                                debug_with_peers!(multiaddr = ?addr, "Skipping ENR update");
                                 return;
                             }
 
@@ -1091,21 +1091,21 @@ impl NetworkBehaviour for Discovery {
                         }
                         (Some(Protocol::Udp(port)), Some(Protocol::QuicV1)) => {
                             if !self.update_ports.quic4 {
-                                debug!(?addr, "Skipping ENR update");
+                                debug_with_peers!(?addr, "Skipping ENR update");
                                 return;
                             }
 
                             self.update_enr_quic_port(port, false)
                         }
                         _ => {
-                            debug!(?addr, "Encountered unacceptable multiaddr for listening (unsupported transport)");
+                            debug_with_peers!(?addr, "Encountered unacceptable multiaddr for listening (unsupported transport)");
                             return;
                         }
                     },
                     Some(Protocol::Ip6(_)) => match (addr_iter.next(), addr_iter.next()) {
                         (Some(Protocol::Tcp(port)), None) => {
                             if !self.update_ports.tcp6 {
-                                debug!(?addr, "Skipping ENR update");
+                                debug_with_peers!(?addr, "Skipping ENR update");
                                 return;
                             }
 
@@ -1113,19 +1113,19 @@ impl NetworkBehaviour for Discovery {
                         }
                         (Some(Protocol::Udp(port)), Some(Protocol::QuicV1)) => {
                             if !self.update_ports.quic6 {
-                                debug!(?addr, "Skipping ENR update");
+                                debug_with_peers!(?addr, "Skipping ENR update");
                                 return;
                             }
 
                             self.update_enr_quic_port(port, true)
                         }
                         _ => {
-                            debug!(?addr, "Encountered unacceptable multiaddr for listening (unsupported transport)");
+                            debug_with_peers!(?addr, "Encountered unacceptable multiaddr for listening (unsupported transport)");
                             return;
                         }
                     },
                     _ => {
-                        debug!(
+                        debug_with_peers!(
                             ?addr,
                             "Encountered unacceptable multiaddr for listening (no IP)"
                         );
@@ -1137,10 +1137,10 @@ impl NetworkBehaviour for Discovery {
 
                 match attempt_enr_update {
                     Ok(true) => {
-                        info!(enr = local_enr.to_base64(), seq = local_enr.seq(), id = %local_enr.node_id(), ip4 = ?local_enr.ip4(), udp4 = ?local_enr.udp4(), tcp4 = ?local_enr.tcp4(), tcp6 = ?local_enr.tcp6(), udp6 = ?local_enr.udp6(),"Updated local ENR")
+                        info_with_peers!(enr = local_enr.to_base64(), seq = local_enr.seq(), id = %local_enr.node_id(), ip4 = ?local_enr.ip4(), udp4 = ?local_enr.udp4(), tcp4 = ?local_enr.tcp4(), tcp6 = ?local_enr.tcp6(), udp6 = ?local_enr.udp6(),"Updated local ENR")
                     }
                     Ok(false) => {} // Nothing to do, ENR already configured
-                    Err(e) => warn!(error = ?e,"Failed to update ENR"),
+                    Err(e) => warn_with_peers!(error = ?e,"Failed to update ENR"),
                 }
             }
             _ => {
@@ -1163,7 +1163,7 @@ impl Discovery {
                         return;
                     }
                     // set peer as disconnected in discovery DHT
-                    debug!(%peer_id, error = %ClearDialError(error),"Marking peer disconnected in DHT");
+                    debug_with_peers!(%peer_id, error = %ClearDialError(error),"Marking peer disconnected in DHT");
                     self.disconnect_peer(&peer_id);
                 }
                 DialError::LocalPeerId { .. }
@@ -1171,7 +1171,7 @@ impl Discovery {
                 | DialError::Transport(_)
                 | DialError::WrongPeerId { .. } => {
                     // set peer as disconnected in discovery DHT
-                    debug!(%peer_id, error = %ClearDialError(error),"Marking peer disconnected in DHT");
+                    debug_with_peers!(%peer_id, error = %ClearDialError(error),"Marking peer disconnected in DHT");
                     self.disconnect_peer(&peer_id);
                 }
                 DialError::DialPeerConditionFalse(_) | DialError::Aborted => {}
