@@ -5,11 +5,11 @@ use eth2_libp2p::Multiaddr;
 use eth2_libp2p::TaskExecutor;
 use eth2_libp2p::{Context, Enr, EnrExt};
 use eth2_libp2p::{NetworkConfig, NetworkEvent};
-use tracing::Instrument;
-use logging::{debug_with_peers, error_with_peers, info_with_peers};
-use tracing_subscriber::EnvFilter;
+use logging::{debug_with_peers, error_with_peers};
 use std::sync::Arc;
 use std_ext::ArcExt as _;
+use tracing::{Instrument, info_span};
+use tracing_subscriber::EnvFilter;
 use types::{config::Config as ChainConfig, nonstandard::Phase, preset::Preset};
 
 use eth2_libp2p::rpc::config::InboundRateLimiterConfig;

@@ -13,13 +13,13 @@ use libp2p::swarm::{
 use libp2p::swarm::{ConnectionClosed, FromSwarm, SubstreamProtocol, THandlerInEvent};
 use libp2p::PeerId;
 use logging::{debug_with_peers, trace_with_peers};
-use tracing::instrument;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std_ext::ArcExt as _;
+use tracing::instrument;
 use types::{config::Config as ChainConfig, preset::Preset};
 
 use crate::types::ForkContext;

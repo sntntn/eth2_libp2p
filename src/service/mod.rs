@@ -35,7 +35,6 @@ use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::upnp::tokio::Behaviour as Upnp;
 use libp2p::{identify, PeerId, SwarmBuilder};
 use logging::{crit, debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers};
-use tracing::instrument;
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -43,6 +42,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::usize;
 use std_ext::ArcExt as _;
+use tracing::instrument;
 use typenum::Unsigned as _;
 
 use types::{

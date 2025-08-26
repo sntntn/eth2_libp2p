@@ -5,8 +5,7 @@ use crate::{metrics, multiaddr::Multiaddr, types::Subnet, Enr, EnrExt, Gossipsub
 use itertools::Itertools as _;
 use peer_info::{ConnectionDirection, PeerConnectionStatus, PeerInfo};
 use score::{PeerAction, ReportSource, Score, ScoreState};
-use logging::crit;
-use logging::{debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers};
+use logging::{debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers, crit};
 use std::net::IpAddr;
 use std::time::Instant;
 use std::{cmp::Ordering, fmt::Display};

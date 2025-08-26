@@ -2,12 +2,12 @@
 use common::{Protocol, build_tracing_subscriber};
 use eth2_libp2p::rpc::{methods::*, RequestType};
 use eth2_libp2p::{service::api_types::AppRequestId, NetworkEvent, ReportSource, Response};
-use tracing::{ info_span, Instrument};
 use logging::{debug_with_peers, error_with_peers, warn_with_peers};
 use ssz::{ByteList, ContiguousList, SszReadDefault as _, SszWrite as _};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
+use tracing::{ info_span, Instrument};
 use try_from_iterator::TryFromIterator as _;
 use types::deneb::containers::BlobSidecar;
 use types::phase0::primitives::H32;

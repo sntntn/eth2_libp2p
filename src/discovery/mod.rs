@@ -33,8 +33,7 @@ pub use libp2p::{
     },
 };
 use lru::LruCache;
-use logging::crit;
-use logging::{debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers};
+use logging::{debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers, crit};
 use ssz::SszWrite as _;
 use std::{
     collections::{HashMap, VecDeque},

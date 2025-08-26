@@ -10,9 +10,9 @@ use anyhow::Result;
 use delay_map::HashSetDelay;
 use discv5::Enr;
 use libp2p::identify::Info as IdentifyInfo;
+use logging::{debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers};
 use peerdb::{BanOperation, BanResult, ScoreUpdateResult};
 use rand::seq::SliceRandom;
-use logging::{debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers};
 use smallvec::SmallVec;
 use std::{
     sync::Arc,

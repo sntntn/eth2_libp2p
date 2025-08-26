@@ -48,12 +48,12 @@ snap = { workspace = true }
 ssz = { workspace = true }
 std_ext = { workspace = true }
 strum = { workspace = true }
-tiny-keccak = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 tokio-io-timeout = { workspace = true }
 tokio-util = { workspace = true }
+tiny-keccak = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 try_from_iterator = { workspace = true }
 typenum = { workspace = true }
 types = { workspace = true }

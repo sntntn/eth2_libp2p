@@ -12,8 +12,8 @@ use libp2p::swarm::behaviour::{ConnectionClosed, ConnectionEstablished, DialFail
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::dummy::ConnectionHandler;
 use libp2p::swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm};
-pub use metrics::{set_gauge_vec, NAT_OPEN};
 use logging::{debug_with_peers, error_with_peers, trace_with_peers};
+pub use metrics::{set_gauge_vec, NAT_OPEN};
 
 use crate::discovery::enr_ext::EnrExt;
 use crate::types::SyncState;
