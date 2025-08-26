@@ -5,7 +5,8 @@ use eth2_libp2p::Multiaddr;
 use eth2_libp2p::TaskExecutor;
 use eth2_libp2p::{Context, Enr, EnrExt};
 use eth2_libp2p::{NetworkConfig, NetworkEvent};
-use tracing::{debug, error, info_span, Instrument};
+use tracing::Instrument;
+use logging::{debug_with_peers, error_with_peers, info_with_peers};
 use tracing_subscriber::EnvFilter;
 use std::sync::Arc;
 use std_ext::ArcExt as _;
@@ -189,9 +190,9 @@ pub async fn build_node_pair<P: Preset>(
 
     match sender.testing_dial(receiver_multiaddr.clone()) {
         Ok(()) => {
-            debug!(address = ?receiver_multiaddr, "Sender dialed receiver")
+            debug_with_peers!(address = ?receiver_multiaddr, "Sender dialed receiver")
         }
-        Err(_) => error!("Dialing failed"),
+        Err(_) => error_with_peers!("Dialing failed"),
     };
     (sender, receiver)
 }
@@ -224,8 +225,8 @@ pub async fn build_linear<P: Preset>(
         .collect();
     for i in 0..n - 1 {
         match nodes[i].testing_dial(multiaddrs[i + 1].clone()) {
-            Ok(()) => debug!("Connected"),
-            Err(_) => error!("Failed to connect"),
+            Ok(()) => debug_with_peers!("Connected"),
+            Err(_) => error_with_peers!("Failed to connect"),
         };
     }
     nodes

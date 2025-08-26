@@ -12,7 +12,7 @@ use discv5::Enr;
 use libp2p::identify::Info as IdentifyInfo;
 use peerdb::{BanOperation, BanResult, ScoreUpdateResult};
 use rand::seq::SliceRandom;
-use tracing::{debug, error, trace, warn};
+use logging::{debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers};
 use smallvec::SmallVec;
 use std::{
     sync::Arc,
@@ -187,7 +187,7 @@ impl PeerManager {
     pub fn goodbye_peer(&mut self, peer_id: &PeerId, reason: GoodbyeReason, source: ReportSource) {
         // Update the sync status if required
         if let Some(info) = self.network_globals.peers.write().peer_info_mut(peer_id) {
-            debug!(%peer_id, %reason, score = %info.score(), "Sending goodbye to peer");
+            debug_with_peers!(%peer_id, %reason, score = %info.score(), "Sending goodbye to peer");
             if matches!(reason, GoodbyeReason::IrrelevantNetwork) {
                 info.update_sync_status(SyncStatus::IrrelevantPeer);
             }
@@ -347,7 +347,7 @@ impl PeerManager {
                         .update_min_ttl(&peer_id, min_ttl);
                 }
                 if self.dial_peer(enr) {
-                    debug!(%peer_id, "Added discovered ENR peer to dial queue");
+                    debug_with_peers!(%peer_id, "Added discovered ENR peer to dial queue");
                     to_dial_peers += 1;
                 }
             }
@@ -360,7 +360,7 @@ impl PeerManager {
         // reach out target. To prevent the infinite loop, if a query returns no useful peers, we
         // will cancel the recursiveness and wait for the heartbeat to trigger another query latter.
         if results_count > 0 && to_dial_peers == 0 {
-            debug!(
+            debug_with_peers!(
                 results = results_count,
                 "Skipping recursive discovery query after finding no useful results"
             );            metrics::inc_counter(&metrics::DISCOVERY_NO_USEFUL_ENRS);
@@ -461,7 +461,7 @@ impl PeerManager {
             if previous_kind != peer_info.client().kind
                 || *peer_info.listening_addresses() != previous_listening_addresses
             {
-                debug!(
+                debug_with_peers!(
                     %peer_id,
                     protocol_version = &info.protocol_version,
                     agent_version = &info.agent_version,
@@ -472,7 +472,7 @@ impl PeerManager {
                 );
             }
         } else {
-            error!(
+            error_with_peers!(
                 peer_id = peer_id.to_string(),
                 "Received an Identify response from an unknown peer"
             );        
@@ -491,7 +491,7 @@ impl PeerManager {
     ) {
         let client = self.network_globals.client(peer_id);
         let score = self.network_globals.peers.read().score(peer_id);
-        debug!(%protocol, %err, %client, %peer_id, %score, ?direction, "RPC Error");
+        debug_with_peers!(%protocol, %err, %client, %peer_id, %score, ?direction, "RPC Error");
         crate::common::metrics::inc_counter_vec(
             &metrics::TOTAL_RPC_ERRORS_PER_CLIENT,
             &[
@@ -508,7 +508,7 @@ impl PeerManager {
                 PeerAction::MidToleranceError
             }
             RPCError::InternalError(e) => {
-                debug!(error = %e, %peer_id, "Internal RPC Error");
+                debug_with_peers!(error = %e, %peer_id, "Internal RPC Error");
                 return;
             }
             RPCError::HandlerRejected => PeerAction::Fatal,
@@ -603,7 +603,7 @@ impl PeerManager {
             RPCError::StreamTimeout => match direction {
                 ConnectionDirection::Incoming => {
                     // There was a timeout responding to a peer.
-                    debug!(%peer_id, "Timed out responding to RPC Request");
+                    debug_with_peers!(%peer_id, "Timed out responding to RPC Request");
                     return;
                 }
                 ConnectionDirection::Outgoing => match protocol {
@@ -642,7 +642,7 @@ impl PeerManager {
         if let Some(peer_info) = self.network_globals.peers.read().peer_info(peer_id) {
             // received a ping
             // reset the to-ping timer for this peer
-            trace!(%peer_id, seq_no = seq, "Received a ping request");
+            trace_with_peers!(%peer_id, seq_no = seq, "Received a ping request");
             match peer_info.connection_direction() {
                 Some(ConnectionDirection::Incoming) => {
                     self.inbound_ping_peers.insert(*peer_id);
@@ -651,23 +651,23 @@ impl PeerManager {
                     self.outbound_ping_peers.insert(*peer_id);
                 }
                 None => {
-                    warn!(%peer_id, "Received a ping from a peer with an unknown connection direction");
+                    warn_with_peers!(%peer_id, "Received a ping from a peer with an unknown connection direction");
                 }
             }
 
             // if the sequence number is unknown send an update the meta data of the peer.
             if let Some(meta_data) = &peer_info.meta_data() {
                 if meta_data.seq_number() < seq {
-                    trace!(%peer_id, known_seq_no = meta_data.seq_number(), ping_seq_no = seq, "Requesting new metadata from peer");
+                    trace_with_peers!(%peer_id, known_seq_no = meta_data.seq_number(), ping_seq_no = seq, "Requesting new metadata from peer");
                     self.events.push(PeerManagerEvent::MetaData(*peer_id));
                 }
             } else {
                 // if we don't know the meta-data, request it
-                debug!(%peer_id, "Requesting first metadata from peer");
+                debug_with_peers!(%peer_id, "Requesting first metadata from peer");
                 self.events.push(PeerManagerEvent::MetaData(*peer_id));
             }
         } else {
-            error!(%peer_id, "Received a PING from an unknown peer");
+            error_with_peers!(%peer_id, "Received a PING from an unknown peer");
         }
     }
 
@@ -679,16 +679,16 @@ impl PeerManager {
             // if the sequence number is unknown send update the meta data of the peer.
             if let Some(meta_data) = &peer_info.meta_data() {
                 if meta_data.seq_number() < seq {
-                    trace!(%peer_id, known_seq_no = meta_data.seq_number(), pong_seq_no = seq, "Requesting new metadata from peer");
+                    trace_with_peers!(%peer_id, known_seq_no = meta_data.seq_number(), pong_seq_no = seq, "Requesting new metadata from peer");
                     self.events.push(PeerManagerEvent::MetaData(*peer_id));
                 }
             } else {
                 // if we don't know the meta-data, request it
-                trace!(%peer_id, "Requesting first metadata from peer");
+                trace_with_peers!(%peer_id, "Requesting first metadata from peer");
                 self.events.push(PeerManagerEvent::MetaData(*peer_id));
             }
         } else {
-            error!(%peer_id, "Received a PONG from an unknown peer");
+            error_with_peers!(%peer_id, "Received a PONG from an unknown peer");
         }
     }
 
@@ -699,15 +699,15 @@ impl PeerManager {
         if let Some(peer_info) = self.network_globals.peers.write().peer_info_mut(peer_id) {
             if let Some(known_meta_data) = &peer_info.meta_data() {
                 if known_meta_data.seq_number() < meta_data.seq_number() {
-                    trace!(%peer_id, known_seq_no = known_meta_data.seq_number(), new_seq_no = meta_data.seq_number(), "Updating peer's metadata");
+                    trace_with_peers!(%peer_id, known_seq_no = known_meta_data.seq_number(), new_seq_no = meta_data.seq_number(), "Updating peer's metadata");
                 } else {
-                    trace!(%peer_id, known_seq_no = known_meta_data.seq_number(), new_seq_no = meta_data.seq_number(), "Received old metadata");
+                    trace_with_peers!(%peer_id, known_seq_no = known_meta_data.seq_number(), new_seq_no = meta_data.seq_number(), "Received old metadata");
                     // Updating metadata even in this case to prevent storing
                     // incorrect  `attnets/syncnets` for a peer
                 }
             } else {
                 // we have no meta-data for this peer, update
-                debug!(%peer_id, new_seq_no = meta_data.seq_number(), "Obtained peer's metadata");
+                debug_with_peers!(%peer_id, new_seq_no = meta_data.seq_number(), "Obtained peer's metadata");
             }
 
             let custody_subnet_count_opt = meta_data.custody_subnet_count();
@@ -722,7 +722,7 @@ impl PeerManager {
                             peer_info.set_custody_subnets(custody_subnets);
                         }
                         Err(err) => {
-                            debug!(
+                            debug_with_peers!(
                                 info = "Sending goodbye to peer",
                                 peer_id = %peer_id,
                                 custody_subnet_count,
@@ -735,7 +735,7 @@ impl PeerManager {
                 }
             }
         } else {
-            error!(%peer_id, "Received METADATA from an unknown peer");
+            error_with_peers!(%peer_id, "Received METADATA from an unknown peer");
         }
 
         // Disconnect peers with invalid metadata and find other peers instead.
@@ -827,7 +827,7 @@ impl PeerManager {
             let mut peerdb = self.network_globals.peers.write();
             if peerdb.ban_status(peer_id).is_some() {
                 // don't connect if the peer is banned
-                error!(%peer_id, "Connection has been allowed to a banned peer");
+                error_with_peers!(%peer_id, "Connection has been allowed to a banned peer");
             }
 
             match connection {
@@ -894,7 +894,7 @@ impl PeerManager {
 
         // request the subnet query from discovery
         if !subnets_to_discover.is_empty() {
-            debug!(
+            debug_with_peers!(
                 subnets = ?subnets_to_discover.iter().map(|s| s.subnet).collect::<Vec<_>>(),
                 "Making subnet queries for maintaining sync committee peers"
             );
@@ -932,7 +932,7 @@ impl PeerManager {
 
             if wanted_peers != 0 {
                 // We need more peers, re-queue a discovery lookup.
-                debug!(
+                debug_with_peers!(
                     connected = peer_count,
                     target = self.target_peers,
                     outbound = outbound_only_peer_count,
@@ -1440,7 +1440,7 @@ impl PeerManager {
             .unwrap_or_else(|e| {
                 // This is an unreachable scenario unless there's a bug, as we've validated the csc
                 // just above.
-                error!(
+                error_with_peers!(
                     error = ?e,
                     peer_id = %peer_id,
                     custody_subnet_count,
