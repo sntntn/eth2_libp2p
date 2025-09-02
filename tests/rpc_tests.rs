@@ -1048,7 +1048,7 @@ async fn test_tcp_blocks_by_root_chunked_rpc_terminates_correctly() {
 /// Establishes a pair of nodes and disconnects the pair based on the selected protocol via an RPC
 /// Goodbye message.
 #[allow(clippy::single_match)]
-async fn goodbye_test(log_level: Level, enable_logging: bool, protocol: Protocol) {
+async fn goodbye_test(log_level: &str, enable_logging: bool, protocol: Protocol) {
     build_tracing_subscriber(log_level, enable_logging);
 
     // get sender/receiver
