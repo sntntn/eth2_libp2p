@@ -8,7 +8,7 @@ use eth2_libp2p::{NetworkConfig, NetworkEvent};
 use logging::{debug_with_peers, error_with_peers};
 use std::sync::Arc;
 use std_ext::ArcExt as _;
-use tracing::{Instrument, info_span};
+use tracing::{info_span, Instrument};
 use tracing_subscriber::EnvFilter;
 use types::{config::Config as ChainConfig, nonstandard::Phase, preset::Preset};
 
@@ -76,7 +76,7 @@ pub async fn build_libp2p_instance<P: Preset>(
     // launch libp2p service
 
     let (shutdown_tx, _) = futures::channel::mpsc::channel(1);
-    let executor = TaskExecutor::new( shutdown_tx);
+    let executor = TaskExecutor::new(shutdown_tx);
     let libp2p_context = Context {
         chain_config: chain_config.clone_arc(),
         config,
@@ -114,7 +114,6 @@ pub async fn build_node_pair<P: Preset>(
     disable_peer_scoring: bool,
     inbound_rate_limiter: Option<InboundRateLimiterConfig>,
 ) -> (Libp2pInstance<P>, Libp2pInstance<P>) {
-
     let mut sender = build_libp2p_instance::<P>(
         chain_config,
         vec![],

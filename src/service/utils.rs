@@ -156,7 +156,8 @@ pub fn load_private_key(config: &NetworkConfig) -> Keypair {
             Err(e) => {
                 warn_with_peers!(
                     "Could not write node key to file: {:?}. error: {}",
-                    network_key_f, e
+                    network_key_f,
+                    e
                 );
             }
         }

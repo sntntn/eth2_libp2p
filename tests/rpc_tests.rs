@@ -1,5 +1,5 @@
 #![cfg(test)]
-use common::{Protocol, build_tracing_subscriber};
+use common::{build_tracing_subscriber, Protocol};
 use eth2_libp2p::rpc::{methods::*, RequestType};
 use eth2_libp2p::{service::api_types::AppRequestId, NetworkEvent, ReportSource, Response};
 use logging::{debug_with_peers, error_with_peers, warn_with_peers};
@@ -7,7 +7,7 @@ use ssz::{ByteList, ContiguousList, SszReadDefault as _, SszWrite as _};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-use tracing::{ info_span, Instrument};
+use tracing::{info_span, Instrument};
 use try_from_iterator::TryFromIterator as _;
 use types::deneb::containers::BlobSidecar;
 use types::phase0::primitives::H32;
@@ -142,7 +142,6 @@ async fn test_tcp_status_rpc() {
     }
     .instrument(info_span!("Sender"));
 
-
     // build the receiver future
     let receiver_future = async {
         loop {
@@ -163,7 +162,6 @@ async fn test_tcp_status_rpc() {
         }
     }
     .instrument(info_span!("Receiver"));
-
 
     tokio::select! {
         _ = sender_future => {}
@@ -260,7 +258,6 @@ async fn test_tcp_blocks_by_range_chunked_rpc() {
     }
     .instrument(info_span!("Sender"));
 
-
     // build the receiver future
     let receiver_future = async {
         loop {
@@ -303,7 +300,6 @@ async fn test_tcp_blocks_by_range_chunked_rpc() {
         }
     }
     .instrument(info_span!("Receiver"));
-
 
     tokio::select! {
         _ = sender_future => {}
@@ -388,7 +384,6 @@ async fn test_blobs_by_range_chunked_rpc() {
     }
     .instrument(info_span!("Sender"));
 
-
     // build the receiver future
     let receiver_future = async {
         loop {
@@ -423,7 +418,6 @@ async fn test_blobs_by_range_chunked_rpc() {
         }
     }
     .instrument(info_span!("Receiver"));
-
 
     tokio::select! {
         _ = sender_future => {}
@@ -490,7 +484,6 @@ async fn test_tcp_blocks_by_range_over_limit() {
     }
     .instrument(info_span!("Sender"));
 
-
     // build the receiver future
     let receiver_future = async {
         loop {
@@ -524,7 +517,6 @@ async fn test_tcp_blocks_by_range_over_limit() {
         }
     }
     .instrument(info_span!("Receiver"));
-
 
     tokio::select! {
         _ = sender_future => {}
@@ -608,7 +600,6 @@ async fn test_tcp_blocks_by_range_chunked_rpc_terminates_correctly() {
         }
     }
     .instrument(info_span!("Sender"));
-
 
     // determine messages to send (PeerId, RequestId). If some, indicates we still need to send
     // messages
@@ -772,7 +763,6 @@ async fn test_tcp_blocks_by_range_single_empty_rpc() {
     }
     .instrument(info_span!("Receiver"));
 
-
     tokio::select! {
         _ = sender_future => {}
         _ = receiver_future => {}
@@ -927,14 +917,9 @@ async fn test_tcp_blocks_by_root_chunked_rpc_terminates_correctly() {
 
     // get sender/receiver
 
-    let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &config,
-        Phase::Bellatrix,
-        Protocol::Tcp,
-        false,
-        None,
-    )
-    .await;
+    let (mut sender, mut receiver) =
+        common::build_node_pair::<Mainnet>(&config, Phase::Bellatrix, Protocol::Tcp, false, None)
+            .await;
 
     // BlocksByRoot Request
     let rpc_request = RequestType::BlocksByRoot(BlocksByRootRequest::new(
@@ -986,7 +971,6 @@ async fn test_tcp_blocks_by_root_chunked_rpc_terminates_correctly() {
         }
     }
     .instrument(info_span!("Sender"));
-
 
     // determine messages to send (PeerId, RequestId). If some, indicates we still need to send
     // messages
@@ -1082,7 +1066,6 @@ async fn goodbye_test(log_level: &str, enable_logging: bool, protocol: Protocol)
         }
     }
     .instrument(info_span!("Sender"));
-
 
     // build the receiver future
     let receiver_future = async {
@@ -1278,14 +1261,9 @@ async fn test_active_requests() {
     build_tracing_subscriber(log_level, enable_logging);
 
     // Get sender/receiver.
-    let (mut sender, mut receiver) = common::build_node_pair::<Mainnet>(
-        &config,
-        Phase::Phase0,
-        Protocol::Tcp,
-        false,
-        None,
-    )
-    .await;
+    let (mut sender, mut receiver) =
+        common::build_node_pair::<Mainnet>(&config, Phase::Phase0, Protocol::Tcp, false, None)
+            .await;
 
     // Dummy STATUS RPC request.
     let rpc_request = RequestType::Status(StatusMessage {

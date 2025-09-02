@@ -14,7 +14,7 @@ use std::{
 
 use futures::FutureExt;
 use libp2p::{swarm::NotifyHandler, PeerId};
-use logging::{debug_with_peers, crit};
+use logging::{crit, debug_with_peers};
 use smallvec::SmallVec;
 use tokio_util::time::DelayQueue;
 use types::preset::Preset;
@@ -92,8 +92,8 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
         // First check that there are not already other requests waiting to be sent.
         if let Some(queued_requests) = self.delayed_requests.get_mut(&(peer_id, protocol)) {
             debug_with_peers!(
-                %peer_id, 
-                protocol = %req.protocol(), 
+                %peer_id,
+                protocol = %req.protocol(),
                 "Self rate limiting since there are already other requests waiting to be sent"
             );
 
@@ -143,7 +143,8 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
                         %peer_id,
                         protocol = %req.protocol(),
                         "Self rate limiting due to the number of concurrent requests"
-                    );                    return Err((
+                    );
+                    return Err((
                         QueuedRequest {
                             req,
                             request_id,
@@ -171,9 +172,9 @@ impl<Id: ReqId, P: Preset> SelfRateLimiter<Id, P> {
                         }
                         RateLimitedErr::TooSoon(wait_time) => {
                             debug_with_peers!(
-                                protocol = %protocol.protocol(), 
-                                wait_time_ms = wait_time.as_millis(), 
-                                %peer_id, 
+                                protocol = %protocol.protocol(),
+                                wait_time_ms = wait_time.as_millis(),
+                                %peer_id,
                                 "Self rate limiting"
                             );
 

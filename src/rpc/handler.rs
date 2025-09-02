@@ -17,7 +17,7 @@ use libp2p::swarm::handler::{
 };
 use libp2p::swarm::{ConnectionId, Stream};
 use libp2p::PeerId;
-use logging::{ debug_with_peers, trace_with_peers, crit};
+use logging::{crit, debug_with_peers, trace_with_peers};
 use smallvec::SmallVec;
 use std::{
     collections::{hash_map::Entry, VecDeque},
@@ -403,7 +403,8 @@ where
                         peer_id = %self.peer_id,
                         connection_id = %self.connection_id,
                         "Shutdown timeout elapsed, Handler deactivated"
-                    );                    return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                    );
+                    return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                         HandlerEvent::Close(RPCError::Disconnected),
                     ));
                 }
@@ -595,7 +596,8 @@ where
                                             .duration_since(info.request_start_time)
                                             .as_secs(),
                                         "BlobsByRange Response sent"
-                                    );                                }
+                                    );
+                                }
 
                                 // There is nothing more to process on this substream as it has
                                 // been closed. Move on to the next one.

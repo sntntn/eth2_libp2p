@@ -81,11 +81,7 @@ impl NetworkGlobals {
             peer_id: RwLock::new(enr.peer_id()),
             listen_multiaddrs: RwLock::new(Vec::new()),
             local_metadata: RwLock::new(local_metadata),
-            peers: RwLock::new(PeerDB::new(
-                config,
-                trusted_peers,
-                disable_peer_scoring,
-            )),
+            peers: RwLock::new(PeerDB::new(config, trusted_peers, disable_peer_scoring)),
             gossipsub_subscriptions: RwLock::new(HashSet::new()),
             sync_state: RwLock::new(SyncState::Stalled),
             backfill_state: RwLock::new(BackFillState::Paused),
@@ -200,12 +196,7 @@ impl NetworkGlobals {
             custody_subnet_count: chain_config.custody_requirement,
         });
 
-        Self::new_test_globals_with_metadata(
-            chain_config,
-            trusted_peers,
-            metadata,
-            network_config,
-        )
+        Self::new_test_globals_with_metadata(chain_config, trusted_peers, metadata, network_config)
     }
 
     pub(crate) fn new_test_globals_with_metadata(

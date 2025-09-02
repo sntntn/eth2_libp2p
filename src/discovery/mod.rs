@@ -32,8 +32,10 @@ pub use libp2p::{
         SubstreamProtocol, ToSwarm,
     },
 };
+use logging::{
+    crit, debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers,
+};
 use lru::LruCache;
-use logging::{debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers, crit};
 use ssz::SszWrite as _;
 use std::{
     collections::{HashMap, VecDeque},
@@ -566,9 +568,9 @@ impl Discovery {
 
         if let Err(error) = update() {
             warn_with_peers!(
-                    error = ?error,
-                    "Could not update eth2 ENR field"
-                )
+                error = ?error,
+                "Could not update eth2 ENR field"
+            )
         }
 
         // replace the global version with discovery version
@@ -621,7 +623,9 @@ impl Discovery {
     fn add_subnet_query(&mut self, subnet: Subnet, min_ttl: Option<Instant>, retries: usize) {
         // remove the entry and complete the query if greater than the maximum search count
         if retries > MAX_DISCOVERY_RETRY {
-            debug_with_peers!("Subnet peer discovery did not find sufficient peers. Reached max retry limit");
+            debug_with_peers!(
+                "Subnet peer discovery did not find sufficient peers. Reached max retry limit"
+            );
             return;
         }
 
@@ -741,8 +745,7 @@ impl Discovery {
         // Only start a discovery query if we have a subnet to look for.
         if !filtered_subnet_queries.is_empty() {
             // build the subnet predicate as a combination of the eth2_fork_predicate and the subnet predicate
-            let subnet_predicate =
-                subnet_predicate(self.chain_config.clone(), filtered_subnets);
+            let subnet_predicate = subnet_predicate(self.chain_config.clone(), filtered_subnets);
 
             debug_with_peers!(
                 subnets = ?filtered_subnet_queries,
@@ -838,7 +841,8 @@ impl Discovery {
                         debug_with_peers!(
                             ?subnets_searched_for,
                             "Grouped subnet discovery query yielded no results."
-                        );                        queries.iter().for_each(|query| {
+                        );
+                        queries.iter().for_each(|query| {
                             self.add_subnet_query(query.subnet, query.min_ttl, query.retries + 1);
                         })
                     }
@@ -873,10 +877,8 @@ impl Discovery {
                             self.add_subnet_query(query.subnet, query.min_ttl, query.retries + 1);
 
                             // Check the specific subnet against the enr
-                            let subnet_predicate = subnet_predicate(
-                                self.chain_config.clone(),
-                                vec![query.subnet]
-                            );
+                            let subnet_predicate =
+                                subnet_predicate(self.chain_config.clone(), vec![query.subnet]);
 
                             r.clone()
                                 .into_iter()
@@ -1075,7 +1077,7 @@ impl NetworkBehaviour for Discovery {
                     ?addr,
                     "Received NewListenAddr event from swarm"
                 );
-                
+
                 let mut addr_iter = addr.iter();
 
                 let attempt_enr_update = match addr_iter.next() {

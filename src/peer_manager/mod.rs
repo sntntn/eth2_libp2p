@@ -142,10 +142,7 @@ pub enum PeerManagerEvent {
 
 impl PeerManager {
     // NOTE: Must be run inside a tokio executor.
-    pub fn new(
-        cfg: config::Config,
-        network_globals: Arc<NetworkGlobals>,
-    ) -> Result<Self> {
+    pub fn new(cfg: config::Config, network_globals: Arc<NetworkGlobals>) -> Result<Self> {
         let config::Config {
             discovery_enabled,
             metrics_enabled,
@@ -363,7 +360,8 @@ impl PeerManager {
             debug_with_peers!(
                 results = results_count,
                 "Skipping recursive discovery query after finding no useful results"
-            );            metrics::inc_counter(&metrics::DISCOVERY_NO_USEFUL_ENRS);
+            );
+            metrics::inc_counter(&metrics::DISCOVERY_NO_USEFUL_ENRS);
         } else {
             // Queue another discovery if we need to
             self.maintain_peer_count(to_dial_peers);
@@ -475,7 +473,7 @@ impl PeerManager {
             error_with_peers!(
                 peer_id = peer_id.to_string(),
                 "Received an Identify response from an unknown peer"
-            );        
+            );
         }
     }
 
@@ -938,7 +936,8 @@ impl PeerManager {
                     outbound = outbound_only_peer_count,
                     wanted = wanted_peers,
                     "Starting a new peer discovery query"
-                );                self.events
+                );
+                self.events
                     .push(PeerManagerEvent::DiscoverPeers(wanted_peers));
             }
         }
@@ -1502,8 +1501,7 @@ mod tests {
             target_peers: target_peer_count,
             ..Default::default()
         });
-        let globals =
-            NetworkGlobals::new_test_globals(chain_config, trusted_peers, network_config);
+        let globals = NetworkGlobals::new_test_globals(chain_config, trusted_peers, network_config);
         PeerManager::new(config, Arc::new(globals)).unwrap()
     }
 

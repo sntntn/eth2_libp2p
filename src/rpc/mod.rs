@@ -198,11 +198,9 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
                 .expect("Inbound limiter configuration parameters are valid")
         });
 
-        let outbound_request_limiter: SelfRateLimiter<Id, P> = SelfRateLimiter::new(
-            outbound_rate_limiter_config,
-            fork_context.clone(),
-        )
-        .expect("Outbound limiter configuration parameters are valid");
+        let outbound_request_limiter: SelfRateLimiter<Id, P> =
+            SelfRateLimiter::new(outbound_rate_limiter_config, fork_context.clone())
+                .expect("Outbound limiter configuration parameters are valid");
 
         RPC {
             chain_config,
@@ -256,8 +254,8 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
 
         if peer_disconnected {
             trace_with_peers!(
-                %peer_id, 
-                ?request_id, 
+                %peer_id,
+                ?request_id,
                 %response,
                 "Discarding response, peer is no longer connected"
             );
@@ -389,7 +387,9 @@ where
             },
             (),
         );
-        let _rpc_span = tracing::info_span!("rpc_handler", peer_id = %peer_id, connection_id = %connection_id).entered();
+        let _rpc_span =
+            tracing::info_span!("rpc_handler", peer_id = %peer_id, connection_id = %connection_id)
+                .entered();
         let handler = RPCHandler::new(
             protocol,
             self.fork_context.clone(),
@@ -421,7 +421,9 @@ where
             (),
         );
 
-        let _rpc_span = tracing::info_span!("rpc_handler", peer_id = %peer_id, connection_id = %connection_id).entered();
+        let _rpc_span =
+            tracing::info_span!("rpc_handler", peer_id = %peer_id, connection_id = %connection_id)
+                .entered();
         let handler = RPCHandler::new(
             protocol,
             self.fork_context.clone(),
@@ -531,11 +533,10 @@ where
                     // There is already an active request with the same protocol. Send an error code to the peer.
                     debug_with_peers!(
                         request = %request_type,
-                        protocol = %request_type.protocol(), 
-                        %peer_id, 
+                        protocol = %request_type.protocol(),
+                        %peer_id,
                         "There is an active request with the same protocol"
                     );
-
 
                     self.send_response_inner(
                         peer_id,

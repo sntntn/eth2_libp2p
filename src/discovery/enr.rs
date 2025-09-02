@@ -10,7 +10,7 @@ use alloy_rlp::bytes::Bytes;
 use anyhow::{anyhow, Result};
 use grandine_version::{APPLICATION_NAME, APPLICATION_VERSION};
 use libp2p::identity::Keypair;
-use logging::{debug_with_peers,warn_with_peers};
+use logging::{debug_with_peers, warn_with_peers};
 use ssz::{SszReadDefault as _, SszWrite as _};
 use std::fs::File;
 use std::io::prelude::*;
@@ -131,7 +131,10 @@ pub fn use_or_load_enr(
                                 local_enr.set_seq(new_seq_no, enr_key).map_err(|e| {
                                     anyhow!("Could not update ENR sequence number: {:?}", e)
                                 })?;
-                                debug_with_peers!(seq = new_seq_no, "ENR sequence number increased");
+                                debug_with_peers!(
+                                    seq = new_seq_no,
+                                    "ENR sequence number increased"
+                                );
                             }
                         }
                         Err(e) => {

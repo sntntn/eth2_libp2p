@@ -33,7 +33,7 @@ impl TaskExecutor {
     /// Note: this function is mainly useful in tests. A `TaskExecutor` should be normally obtained from
     /// a [`RuntimeContext`](struct.RuntimeContext.html)
     pub fn new(signal_tx: Sender<ShutdownReason>) -> Self {
-        Self { signal_tx}
+        Self { signal_tx }
     }
 
     /// Spawn a task to monitor the completion of another task.
@@ -78,7 +78,6 @@ impl TaskExecutor {
         task: impl Future<Output = R> + Send + 'static,
         name: &'static str,
     ) -> tokio::task::JoinHandle<R> {
-
         let future = task.inspect(move |_| trace_with_peers!(task = name, "Async task completed"));
 
         tokio::spawn(future)

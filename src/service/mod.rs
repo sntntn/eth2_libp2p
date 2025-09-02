@@ -34,7 +34,9 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::upnp::tokio::Behaviour as Upnp;
 use libp2p::{identify, PeerId, SwarmBuilder};
-use logging::{crit, debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers};
+use logging::{
+    crit, debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers,
+};
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -220,10 +222,8 @@ impl<P: Preset> Network<P> {
         });
 
         // Construct the metadata
-        let meta_data = utils::load_or_build_metadata(
-            config.network_dir.as_deref(),
-            custody_subnet_count,
-        );
+        let meta_data =
+            utils::load_or_build_metadata(config.network_dir.as_deref(), custody_subnet_count);
         let seq_number = meta_data.seq_number();
         let globals = NetworkGlobals::new(
             chain_config.clone_arc(),
@@ -1021,10 +1021,10 @@ impl<P: Preset> Network<P> {
                     }
                     ref e => {
                         warn_with_peers!(
-                                error = ?e,
-                                kind = %topic.kind(),
-                                "Could not publish message"
-                            );
+                            error = ?e,
+                            kind = %topic.kind(),
+                            "Could not publish message"
+                        );
                     }
                 }
 
@@ -1594,7 +1594,10 @@ impl<P: Preset> Network<P> {
                                 .publish(Topic::from(topic.clone()), data)
                             {
                                 Ok(_) => {
-                                    debug_with_peers!(topic = topic_str, "Gossip message published on retry");
+                                    debug_with_peers!(
+                                        topic = topic_str,
+                                        "Gossip message published on retry"
+                                    );
 
                                     metrics::inc_counter_vec(
                                         &metrics::GOSSIP_LATE_PUBLISH_PER_TOPIC_KIND,
@@ -1657,7 +1660,7 @@ impl<P: Preset> Network<P> {
                     priority = failed_messages.priority,
                     non_priority = failed_messages.non_priority,
                     "Slow gossipsub peer"
-                );                // Punish the peer if it cannot handle priority messages
+                ); // Punish the peer if it cannot handle priority messages
                 if failed_messages.total_timeout() > 10 {
                     debug_with_peers!(%peer_id, "Slow gossipsub peer penalized for priority failure");
                     self.peer_manager_mut().report_peer(

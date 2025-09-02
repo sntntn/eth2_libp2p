@@ -7,7 +7,7 @@ use crate::types::ForkContext;
 use crate::PeerId;
 use futures::FutureExt;
 use libp2p::swarm::ConnectionId;
-use logging::{debug_with_peers, crit};
+use logging::{crit, debug_with_peers};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -74,12 +74,9 @@ impl<P: Preset> ResponseLimiter<P> {
             return false;
         }
 
-        if let Err(wait_time) = Self::try_limiter(
-            &mut self.limiter,
-            peer_id,
-            response.clone(),
-            protocol,
-        ) {
+        if let Err(wait_time) =
+            Self::try_limiter(&mut self.limiter, peer_id, response.clone(), protocol)
+        {
             self.delayed_responses
                 .entry((peer_id, protocol))
                 .or_default()

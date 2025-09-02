@@ -3,9 +3,9 @@ use crate::discovery::{peer_id_to_node_id, CombinedKey};
 use crate::eip7594::compute_custody_subnets;
 use crate::{metrics, multiaddr::Multiaddr, types::Subnet, Enr, EnrExt, Gossipsub, PeerId};
 use itertools::Itertools as _;
+use logging::{crit, debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers};
 use peer_info::{ConnectionDirection, PeerConnectionStatus, PeerInfo};
 use score::{PeerAction, ReportSource, Score, ScoreState};
-use logging::{debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers, crit};
 use std::net::IpAddr;
 use std::time::Instant;
 use std::{cmp::Ordering, fmt::Display};
@@ -573,8 +573,7 @@ impl PeerDB {
                     &metrics::PEER_ACTION_EVENTS_PER_CLIENT,
                     &[info.client().kind.as_ref(), action.as_ref(), source.into()],
                 );
-                let result =
-                    Self::handle_score_transition(previous_state, peer_id, info);
+                let result = Self::handle_score_transition(previous_state, peer_id, info);
                 if previous_state == info.score_state() {
                     debug_with_peers!(
                         %msg,
@@ -1101,9 +1100,7 @@ impl PeerDB {
                 Some((*id, unbanned_ips))
             } else {
                 // If there is no minimum, this is a coding error.
-                crit!(
-                    "banned_peers > MAX_BANNED_PEERS despite no banned peers in db!"
-                );
+                crit!("banned_peers > MAX_BANNED_PEERS despite no banned peers in db!");
                 // reset banned_peers this will also exit the loop
                 self.banned_peers_count = BannedPeersCount::default();
                 None
@@ -1131,7 +1128,8 @@ impl PeerDB {
                     peer_id = %to_drop,
                     disconnected_size = self.disconnected_peers.saturating_sub(1),
                     "Removing old disconnected peer"
-                );                self.peers.remove(&to_drop);
+                );
+                self.peers.remove(&to_drop);
             }
             // If there is no minimum, this is a coding error. For safety we decrease
             // the count to avoid a potential infinite loop.
@@ -1159,7 +1157,7 @@ impl PeerDB {
                     score = %info.score(),
                     past_score_state = %previous_state,
                     "Peer transitioned to forced disconnect score state"
-                );                // disconnect the peer if it's currently connected or dialing
+                ); // disconnect the peer if it's currently connected or dialing
                 if info.is_connected_or_dialing() {
                     ScoreTransitionResult::Disconnected
                 } else if previous_state == ScoreState::Banned {
@@ -1176,7 +1174,8 @@ impl PeerDB {
                     score = %info.score(),
                     past_score_state = %previous_state,
                     "Peer transitioned to healthy score state"
-                );                ScoreTransitionResult::NoAction
+                );
+                ScoreTransitionResult::NoAction
             }
             (ScoreState::Healthy, ScoreState::Banned) => {
                 debug_with_peers!(
@@ -1184,7 +1183,7 @@ impl PeerDB {
                     score = %info.score(),
                     past_score_state = %previous_state,
                     "Peer transitioned to healthy score state"
-                );                // unban the peer if it was previously banned.
+                ); // unban the peer if it was previously banned.
                 ScoreTransitionResult::Unbanned
             }
             // Explicitly ignore states that haven't transitioned.
