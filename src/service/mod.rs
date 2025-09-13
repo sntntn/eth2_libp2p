@@ -188,8 +188,6 @@ impl<P: Preset> Network<P> {
         executor: task_executor::TaskExecutor,
         mut ctx: ServiceContext<'_>,
     ) -> Result<(Self, Arc<NetworkGlobals>)> {
-        let _span = tracing::info_span!("rpc_handler", service = "libp2p").entered();
-
         let config = ctx.config.clone();
         trace_with_peers!("Libp2p Service starting");
         // initialise the node's ID
