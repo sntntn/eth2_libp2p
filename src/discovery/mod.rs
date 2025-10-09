@@ -2,7 +2,7 @@
 //!
 //! This module creates a libp2p dummy-behaviour built around the discv5 protocol. It handles
 //! queries and manages access to the discovery routing table.
-use core::num::NonZeroUsize;
+use core::{marker::PhantomData, num::NonZeroUsize};
 
 pub(crate) mod enr;
 pub mod enr_ext;
@@ -17,7 +17,10 @@ pub use libp2p::identity::{Keypair, PublicKey};
 
 use alloy_rlp::bytes::Bytes;
 use anyhow::{anyhow, Error, Result};
-use enr::{ATTESTATION_BITFIELD_ENR_KEY, ETH2_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY};
+use enr::{
+    ATTESTATION_BITFIELD_ENR_KEY, ETH2_ENR_KEY, NEXT_FORK_DIGEST_ENR_KEY,
+    PEERDAS_CUSTODY_GROUP_COUNT_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use libp2p::core::transport::PortUse;
@@ -36,7 +39,7 @@ use logging::{
     crit, debug_with_peers, error_with_peers, info_with_peers, trace_with_peers, warn_with_peers,
 };
 use lru::LruCache;
-use ssz::SszWrite as _;
+use ssz::SszWrite;
 use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, SocketAddr},
@@ -48,6 +51,8 @@ use std::{
 };
 use tokio::sync::mpsc;
 use types::config::Config as ChainConfig;
+use types::phase0::primitives::ForkDigest;
+use types::preset::Preset;
 
 use crate::types::EnrForkId;
 
@@ -159,7 +164,7 @@ enum EventStream {
 
 /// The main discovery service. This can be disabled via CLI arguements. When disabled the
 /// underlying processes are not started, but this struct still maintains our current ENR.
-pub struct Discovery {
+pub struct Discovery<P: Preset> {
     chain_config: Arc<ChainConfig>,
 
     /// A collection of seen live ENRs for quick lookup and to map peer-id's to ENRs.
@@ -196,9 +201,11 @@ pub struct Discovery {
 
     /// Specifies whether various port numbers should be updated after the discovery service has been started
     update_ports: UpdatePorts,
+
+    pub phantom: PhantomData<P>,
 }
 
-impl Discovery {
+impl<P: Preset> Discovery<P> {
     /// NOTE: Creating discovery requires running within a tokio execution environment.
     pub async fn new(
         chain_config: Arc<ChainConfig>,
@@ -327,6 +334,7 @@ impl Discovery {
             started: !config.disable_discovery,
             update_ports,
             enr_dir,
+            phantom: PhantomData,
         })
     }
 
@@ -542,6 +550,36 @@ impl Discovery {
         Ok(())
     }
 
+    /// Update the `cgc` field of our local ENR.
+    pub fn update_enr_cgc(&mut self, cgc: u64) -> Result<()> {
+        self.discv5
+            .enr_insert(PEERDAS_CUSTODY_GROUP_COUNT_ENR_KEY, &cgc)
+            .map_err(|e| anyhow!("{:?}", e))?;
+
+        // persist modified enr to disk
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
+
+        // replace the global version
+        *self.network_globals.local_enr.write() = self.discv5.local_enr();
+
+        Ok(())
+    }
+
+    /// Update the `cgc` field of our local ENR.
+    pub fn update_enr_cgc(&mut self, cgc: u64) -> Result<()> {
+        self.discv5
+            .enr_insert(PEERDAS_CUSTODY_GROUP_COUNT_ENR_KEY, &cgc)
+            .map_err(|e| anyhow!("{:?}", e))?;
+
+        // persist modified enr to disk
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
+
+        // replace the global version
+        *self.network_globals.local_enr.write() = self.discv5.local_enr();
+
+        Ok(())
+    }
+
     /// Updates the `eth2` field of our local ENR.
     pub fn update_eth2_enr(&mut self, enr_fork_id: EnrForkId) {
         // to avoid having a reference to the spec constant, for the logging we assume
@@ -578,6 +616,44 @@ impl Discovery {
 
         // persist modified enr to disk
         enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
+    }
+
+    /// Update the `nfd` field of our local ENR.
+    pub fn update_enr_nfd(&mut self, next_fork_digest: ForkDigest) -> Result<()> {
+        info_with_peers!(
+            next_fork_digest = ?next_fork_digest,
+            "Updating the ENR next fork digest"
+        );
+
+        self.discv5
+            .enr_insert::<Bytes>(NEXT_FORK_DIGEST_ENR_KEY, &next_fork_digest.to_ssz()?.into())
+            .map_err(|e| anyhow!("{:?}", e))?;
+
+        // replace the global version with discovery version
+        *self.network_globals.local_enr.write() = self.discv5.local_enr();
+
+        // persist modified enr to disk
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
+        Ok(())
+    }
+
+    /// Update the `nfd` field of our local ENR.
+    pub fn update_enr_nfd(&mut self, next_fork_digest: ForkDigest) -> Result<()> {
+        info_with_peers!(
+            next_fork_digest = ?next_fork_digest,
+            "Updating the ENR next fork digest"
+        );
+
+        self.discv5
+            .enr_insert::<Bytes>(NEXT_FORK_DIGEST_ENR_KEY, &next_fork_digest.to_ssz()?.into())
+            .map_err(|e| anyhow!("{:?}", e))?;
+
+        // replace the global version with discovery version
+        *self.network_globals.local_enr.write() = self.discv5.local_enr();
+
+        // persist modified enr to disk
+        enr::save_enr_to_disk(self.enr_dir.as_deref(), &self.local_enr());
+        Ok(())
     }
 
     // Bans a peer and it's associated seen IP addresses.
@@ -745,7 +821,7 @@ impl Discovery {
         // Only start a discovery query if we have a subnet to look for.
         if !filtered_subnet_queries.is_empty() {
             // build the subnet predicate as a combination of the eth2_fork_predicate and the subnet predicate
-            let subnet_predicate = subnet_predicate(self.chain_config.clone(), filtered_subnets);
+            let subnet_predicate = subnet_predicate::<P>(self.chain_config.clone(), filtered_subnets);
 
             debug_with_peers!(
                 subnets = ?filtered_subnet_queries,
@@ -762,8 +838,7 @@ impl Discovery {
     /// Search for a specified number of new peers using the underlying discovery mechanism.
     ///
     /// This can optionally search for peers for a given predicate. Regardless of the predicate
-    /// given, this will only search for peers on the same enr_fork_id as specified in the local
-    /// ENR.
+    /// given, this will only search for peers on the same enr_fork_id as specified in the local ENR.
     fn start_query(
         &mut self,
         query: QueryType,
@@ -777,6 +852,7 @@ impl Discovery {
                 return;
             }
         };
+
         // predicate for finding nodes with a matching fork and valid tcp port
         let eth2_fork_predicate = move |enr: &Enr| {
             // `next_fork_epoch` and `next_fork_version` can be different so that
@@ -877,8 +953,10 @@ impl Discovery {
                             self.add_subnet_query(query.subnet, query.min_ttl, query.retries + 1);
 
                             // Check the specific subnet against the enr
-                            let subnet_predicate =
-                                subnet_predicate(self.chain_config.clone(), vec![query.subnet]);
+                            let subnet_predicate = subnet_predicate::<P>(
+                                self.chain_config.clone(),
+                                vec![query.subnet],
+                            );
 
                             r.clone()
                                 .into_iter()
@@ -949,7 +1027,7 @@ impl Discovery {
 
 /* NetworkBehaviour Implementation */
 
-impl NetworkBehaviour for Discovery {
+impl<P: Preset> NetworkBehaviour for Discovery<P> {
     // Discovery is not a real NetworkBehaviour...
     type ConnectionHandler = ConnectionHandler;
     type ToSwarm = DiscoveredPeers;
@@ -1151,7 +1229,7 @@ impl NetworkBehaviour for Discovery {
     }
 }
 
-impl Discovery {
+impl<P: Preset> Discovery<P> {
     fn on_dial_failure(&mut self, peer_id: Option<PeerId>, error: &DialError) {
         if let Some(peer_id) = peer_id {
             match error {
@@ -1190,16 +1268,25 @@ mod tests {
     };
     use libp2p::identity::secp256k1;
     use std_ext::ArcExt as _;
+    use types::preset::Mainnet;
 
-    async fn build_discovery() -> Discovery {
+    async fn build_discovery() -> Discovery<Mainnet> {
         let chain_config = Arc::new(ChainConfig::mainnet());
         let keypair = secp256k1::Keypair::generate();
         let mut config = NetworkConfig::default();
         config.set_listening_addr(crate::ListenAddress::unused_v4_ports());
         let config = Arc::new(config);
         let enr_key: CombinedKey = CombinedKey::from_secp256k1(&keypair);
-        let enr: Enr = build_enr(&chain_config, &enr_key, &config, &EnrForkId::default()).unwrap();
-        let globals = NetworkGlobals::new(
+        let enr: Enr = build_enr(
+            &chain_config,
+            &enr_key,
+            &config,
+            &EnrForkId::default(),
+            None,
+            ForkDigest::default(),
+        )
+        .unwrap();
+        let globals = NetworkGlobals::new::<Mainnet>(
             chain_config.clone_arc(),
             enr,
             MetaData::V2(MetaDataV2 {

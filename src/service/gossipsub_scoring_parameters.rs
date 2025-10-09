@@ -59,7 +59,7 @@ pub struct PeerScoreSettings<P: Preset> {
 
 impl<P: Preset> PeerScoreSettings<P> {
     pub fn new(chain_config: &ChainConfig, mesh_n: usize) -> PeerScoreSettings<P> {
-        let slot = Duration::from_secs(chain_config.seconds_per_slot.get());
+        let slot = chain_config.slot_duration_ms;
         let beacon_attestation_subnet_weight = 1.0 / AttestationSubnetCount::U64 as f64;
         let max_positive_score = (MAX_IN_MESH_SCORE + MAX_FIRST_MESSAGE_DELIVERIES_SCORE)
             * (BEACON_BLOCK_WEIGHT

@@ -1,13 +1,12 @@
 //! The subnet predicate used for searching for a particular subnet.
 use super::*;
-use eip_7594::get_custody_groups;
+use eip_7594::compute_subnets_for_node;
 use logging::trace_with_peers;
-use ssz::Uint256;
 use std::sync::Arc;
-use types::config::Config as ChainConfig;
+use types::{config::Config as ChainConfig, preset::Preset};
 
 /// Returns the predicate for a given subnet.
-pub fn subnet_predicate(
+pub fn subnet_predicate<P: Preset>(
     chain_config: Arc<ChainConfig>,
     subnets: Vec<Subnet>,
 ) -> impl Fn(&Enr) -> bool + Send {
@@ -27,14 +26,13 @@ pub fn subnet_predicate(
             Subnet::SyncCommittee(subnet_id) => sync_committee_bitfield
                 .is_ok_and(|bitfield| bitfield.get(*subnet_id as usize).unwrap_or_default()),
             Subnet::DataColumn(subnet_id) => {
-                if let Ok(custody_subnet_count) = enr.custody_subnet_count(&chain_config) {
-                    // TODO(feature/fulu): review this
-                    let subnets = get_custody_groups(
-                        Uint256::from_be_bytes(enr.node_id().raw()),
-                        custody_subnet_count,
-                    );
-
-                    subnets.contains(subnet_id)
+                if let Ok(custody_group_count) = enr.custody_group_count(&chain_config) {
+                    compute_subnets_for_node::<P>(
+                        enr.node_id().raw(),
+                        custody_group_count,
+                        &chain_config,
+                    )
+                    .map_or(false, |subnets| subnets.contains(subnet_id))
                 } else {
                     false
                 }

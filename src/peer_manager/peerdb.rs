@@ -1,11 +1,15 @@
-use crate::discovery::enr::PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY;
+use crate::discovery::enr::PEERDAS_CUSTODY_GROUP_COUNT_ENR_KEY;
 use crate::discovery::{peer_id_to_node_id, CombinedKey};
-use crate::eip7594::compute_custody_subnets;
-use crate::{metrics, multiaddr::Multiaddr, types::Subnet, Enr, EnrExt, Gossipsub, PeerId};
+use crate::{
+    metrics, multiaddr::Multiaddr, types::Subnet, Enr, EnrExt, Gossipsub, PeerId, SyncInfo,
+};
+use eip_7594::compute_subnets_for_node;
+use helper_functions::misc;
 use itertools::Itertools as _;
 use logging::{crit, debug_with_peers, error_with_peers, trace_with_peers, warn_with_peers};
 use peer_info::{ConnectionDirection, PeerConnectionStatus, PeerInfo};
 use score::{PeerAction, ReportSource, Score, ScoreState};
+use ssz::H256;
 use std::net::IpAddr;
 use std::time::Instant;
 use std::{cmp::Ordering, fmt::Display};
@@ -16,7 +20,8 @@ use std::{
 };
 use sync_status::SyncStatus;
 use types::config::Config as ChainConfig;
-use types::phase0::primitives::SubnetId;
+use types::phase0::primitives::{Epoch, SubnetId};
+use types::preset::Preset;
 
 pub mod client;
 pub mod peer_info;
@@ -260,6 +265,34 @@ impl PeerDB {
             .map(|(peer_id, _)| peer_id)
     }
 
+    /// Returns all the synced peers from the list of allowed peers that claim to have the block
+    /// components for the given epoch based on `status.earliest_available_slot`.
+    ///
+    /// If `earliest_available_slot` info is not available, then return peer anyway assuming it has the
+    /// required data.
+    pub fn synced_peers_for_epoch<'a, P: Preset>(
+        &'a self,
+        epoch: Epoch,
+        allowed_peers: &'a HashSet<PeerId>,
+    ) -> impl Iterator<Item = &'a PeerId> {
+        self.peers
+            .iter()
+            .filter(move |(peer_id, info)| {
+                allowed_peers.contains(peer_id)
+                    && info.is_connected()
+                    && match info.sync_status() {
+                        SyncStatus::Synced { info } => info.has_slot(
+                            misc::compute_start_slot_at_epoch::<P>(epoch + 1).saturating_sub(1),
+                        ),
+                        SyncStatus::Advanced { info } => info.has_slot(
+                            misc::compute_start_slot_at_epoch::<P>(epoch + 1).saturating_sub(1),
+                        ),
+                        _ => false,
+                    }
+            })
+            .map(|(peer_id, _)| peer_id)
+    }
+
     /// Gives the `peer_id` of all known connected and advanced peers.
     pub fn advanced_peers(&self) -> impl Iterator<Item = &PeerId> {
         self.peers
@@ -296,6 +329,23 @@ impl PeerDB {
                 // The custody_subnets hashset can be populated via enr or metadata
                 let is_custody_subnet_peer = info.is_assigned_to_custody_subnet(&subnet);
                 info.is_connected() && info.is_good_gossipsub_peer() && is_custody_subnet_peer
+            })
+            .map(|(peer_id, _)| peer_id)
+    }
+
+    /// Returns an iterator of all peers that are supposed to be custodying
+    /// the given subnet id that also belong to `allowed_peers`.
+    pub fn good_range_sync_custody_subnet_peer<'a>(
+        &'a self,
+        subnet: SubnetId,
+        allowed_peers: &'a HashSet<PeerId>,
+    ) -> impl Iterator<Item = &'a PeerId> {
+        self.peers
+            .iter()
+            .filter(move |(peer_id, info)| {
+                // The custody_subnets hashset can be populated via enr or metadata
+                let is_custody_subnet_peer = info.is_assigned_to_custody_subnet(&subnet);
+                allowed_peers.contains(peer_id) && info.is_connected() && is_custody_subnet_peer
             })
             .map(|(peer_id, _)| peer_id)
     }
@@ -716,15 +766,15 @@ impl PeerDB {
     }
 
     /// Updates the connection state. MUST ONLY BE USED IN TESTS.
-    pub fn __add_connected_peer_testing_only(&mut self, supernode: bool) -> PeerId {
+    pub fn __add_connected_peer_testing_only<P: Preset>(&mut self, supernode: bool) -> PeerId {
         let enr_key = CombinedKey::generate_secp256k1();
         let mut enr = Enr::builder().build(&enr_key).unwrap();
         let peer_id = enr.peer_id();
 
         if supernode {
             enr.insert(
-                PEERDAS_CUSTODY_SUBNET_COUNT_ENR_KEY,
-                &self.chain_config.data_column_sidecar_subnet_count,
+                PEERDAS_CUSTODY_GROUP_COUNT_ENR_KEY,
+                &self.chain_config.number_of_custody_groups,
                 &enr_key,
             )
             .expect("u64 can be encoded");
@@ -739,19 +789,35 @@ impl PeerDB {
             },
         );
 
+        self.update_sync_status(
+            &peer_id,
+            SyncStatus::Synced {
+                // Fill in mock SyncInfo, only for the peer to return `is_synced() == true`.
+                info: SyncInfo {
+                    head_slot: 0,
+                    head_root: H256::zero(),
+                    finalized_epoch: 0,
+                    finalized_root: H256::zero(),
+                    earliest_available_slot: Some(0),
+                },
+            },
+        );
+
         if supernode {
             let peer_info = self.peers.get_mut(&peer_id).expect("peer exists");
             let all_subnets = (0..self.chain_config.data_column_sidecar_subnet_count)
-                .map(|csc| csc.into())
+                .map(|subnet_id| subnet_id.into())
                 .collect();
             peer_info.set_custody_subnets(all_subnets);
         } else {
             let peer_info = self.peers.get_mut(&peer_id).expect("peer exists");
             let node_id = peer_id_to_node_id(&peer_id).expect("convert peer_id to node_id");
-            let subnets =
-                compute_custody_subnets(node_id.raw(), self.chain_config.custody_requirement)
-                    .expect("should compute custody subnets")
-                    .collect();
+            let subnets = compute_subnets_for_node::<P>(
+                node_id.raw(),
+                self.chain_config.custody_requirement,
+                &self.chain_config,
+            )
+            .expect("should compute custody subnets");
             peer_info.set_custody_subnets(subnets);
         }
 

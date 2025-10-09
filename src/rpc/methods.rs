@@ -9,12 +9,11 @@ use ssz::{
     ContiguousList, DynamicList, ReadError, Size, Ssz, SszRead, SszSize, SszWrite, WriteError,
 };
 use std::marker::PhantomData;
-use std::{collections::BTreeMap, ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 use strum::IntoStaticStr;
 use try_from_iterator::TryFromIterator as _;
 use typenum::{Unsigned as _, U256};
 use types::deneb::containers::BlobIdentifier;
-use types::eip7594::NumberOfColumns;
 use types::nonstandard::Phase;
 use types::{
     combined::{
@@ -23,7 +22,10 @@ use types::{
     },
     config::Config as ChainConfig,
     deneb::containers::BlobSidecar,
-    eip7594::{ColumnIndex, DataColumnIdentifier, DataColumnSidecar},
+    fulu::{
+        containers::{DataColumnSidecar, DataColumnsByRootIdentifier},
+        primitives::ColumnIndex,
+    },
     phase0::primitives::{Epoch, ForkDigest, Slot, H256},
     preset::Preset,
     traits::SignedBeaconBlock as _,
@@ -72,9 +74,59 @@ impl Display for ErrorType {
 /* Requests */
 
 /// The STATUS request/response handshake message.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum StatusMessage {
+    V1(StatusMessageV1),
+    V2(StatusMessageV2),
+}
+
+impl StatusMessage {
+    pub fn fork_digest(self) -> ForkDigest {
+        match self {
+            Self::V1(status_message) => status_message.fork_digest,
+            Self::V2(status_message) => status_message.fork_digest,
+        }
+    }
+
+    pub fn finalized_root(self) -> H256 {
+        match self {
+            Self::V1(status_message) => status_message.finalized_root,
+            Self::V2(status_message) => status_message.finalized_root,
+        }
+    }
+
+    pub fn finalized_epoch(self) -> Epoch {
+        match self {
+            Self::V1(status_message) => status_message.finalized_epoch,
+            Self::V2(status_message) => status_message.finalized_epoch,
+        }
+    }
+
+    pub fn head_root(self) -> H256 {
+        match self {
+            Self::V1(status_message) => status_message.head_root,
+            Self::V2(status_message) => status_message.head_root,
+        }
+    }
+
+    pub fn head_slot(self) -> Slot {
+        match self {
+            Self::V1(status_message) => status_message.head_slot,
+            Self::V2(status_message) => status_message.head_slot,
+        }
+    }
+
+    pub fn earliest_available_slot(self) -> Option<Slot> {
+        match self {
+            Self::V1(_) => None,
+            Self::V2(status_message) => Some(status_message.earliest_available_slot),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Ssz)]
 #[ssz(derive_hash = false)]
-pub struct StatusMessage {
+pub struct StatusMessageV1 {
     /// The fork version of the chain we are broadcasting.
     pub fork_digest: ForkDigest,
 
@@ -89,6 +141,61 @@ pub struct StatusMessage {
 
     /// The slot associated with the latest block root.
     pub head_slot: Slot,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Ssz)]
+#[ssz(derive_hash = false)]
+pub struct StatusMessageV2 {
+    /// The fork version of the chain we are broadcasting.
+    pub fork_digest: ForkDigest,
+
+    /// Latest finalized root.
+    pub finalized_root: H256,
+
+    /// Latest finalized epoch.
+    pub finalized_epoch: Epoch,
+
+    /// The latest block root.
+    pub head_root: H256,
+
+    /// The slot associated with the latest block root.
+    pub head_slot: Slot,
+
+    /// The slot after which we guarantee to have all the blocks
+    /// and blobs/data columns that we currently advertise.
+    pub earliest_available_slot: Slot,
+}
+
+impl StatusMessage {
+    pub fn status_v1(&self) -> StatusMessageV1 {
+        match &self {
+            Self::V1(status) => status.clone(),
+            Self::V2(status) => StatusMessageV1 {
+                fork_digest: status.fork_digest,
+                finalized_root: status.finalized_root,
+                finalized_epoch: status.finalized_epoch,
+                head_root: status.head_root,
+                head_slot: status.head_slot,
+            },
+        }
+    }
+
+    pub fn status_v2(&self) -> StatusMessageV2 {
+        match &self {
+            Self::V1(status) => StatusMessageV2 {
+                fork_digest: status.fork_digest,
+                finalized_root: status.finalized_root,
+                finalized_epoch: status.finalized_epoch,
+                head_root: status.head_root,
+                head_slot: status.head_slot,
+                // Note: we always produce a V2 message as our local
+                // status message, so this match arm should ideally never
+                // be invoked in lighthouse.
+                earliest_available_slot: 0,
+            },
+            Self::V2(status) => *status,
+        }
+    }
 }
 
 /// The PING request/response message.
@@ -198,10 +305,17 @@ impl MetaData {
         }
     }
 
-    pub fn custody_subnet_count(&self) -> Option<u64> {
+    pub fn custody_group_count(&self) -> Option<u64> {
         match self {
             Self::V1(_) | Self::V2(_) => None,
-            Self::V3(meta_data) => Some(meta_data.custody_subnet_count),
+            Self::V3(meta_data) => Some(meta_data.custody_group_count),
+        }
+    }
+
+    pub fn custody_group_count_mut(&mut self) -> Option<&mut u64> {
+        match self {
+            Self::V1(_) | Self::V2(_) => None,
+            Self::V3(meta_data) => Some(&mut meta_data.custody_group_count),
         }
     }
 }
@@ -238,7 +352,8 @@ pub struct MetaDataV3 {
     pub attnets: EnrAttestationBitfield,
     /// The persistent sync committee bitfield.
     pub syncnets: EnrSyncCommitteeBitfield,
-    pub custody_subnet_count: u64,
+    /// The node's custody group count.
+    pub custody_group_count: u64,
 }
 
 impl MetaData {
@@ -281,13 +396,13 @@ impl MetaData {
                 seq_number: metadata.seq_number,
                 attnets: metadata.attnets.clone(),
                 syncnets: Default::default(),
-                custody_subnet_count: chain_config.custody_requirement,
+                custody_group_count: chain_config.custody_requirement,
             }),
             MetaData::V2(metadata) => MetaData::V3(MetaDataV3 {
                 seq_number: metadata.seq_number,
                 attnets: metadata.attnets.clone(),
                 syncnets: metadata.syncnets.clone(),
-                custody_subnet_count: chain_config.custody_requirement,
+                custody_group_count: chain_config.custody_requirement,
             }),
             md @ MetaData::V3(_) => md.clone(),
         }
@@ -366,8 +481,8 @@ pub struct BlobsByRangeRequest {
 }
 
 impl BlobsByRangeRequest {
-    pub fn max_blobs_requested(&self, config: &ChainConfig, phase: Phase) -> u64 {
-        self.count.saturating_mul(phase.max_blobs_per_block(config))
+    pub fn max_blobs_requested(&self, config: &ChainConfig, epoch: Epoch) -> u64 {
+        self.count.saturating_mul(config.max_blobs_per_block(epoch))
     }
 }
 
@@ -444,35 +559,35 @@ impl BlocksByRangeRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq, Ssz)]
 /// Request a number of beacon data columns from a peer.
-pub struct DataColumnsByRangeRequest {
+pub struct DataColumnsByRangeRequest<P: Preset> {
     /// The starting slot to request data columns.
     pub start_slot: u64,
     /// The number of slots from the start slot.
     pub count: u64,
     /// The list column indices being requested.
-    pub columns: ContiguousList<ColumnIndex, NumberOfColumns>,
+    pub columns: Arc<ContiguousList<ColumnIndex, P::NumberOfColumns>>,
 }
 
-impl DataColumnsByRangeRequest {
-    pub fn max_requested<P: Preset>(&self) -> u64 {
+impl<P: Preset> DataColumnsByRangeRequest<P> {
+    pub fn max_requested(&self) -> u64 {
         self.count.saturating_mul(self.columns.len() as u64)
     }
 
     pub fn ssz_min_len() -> Result<usize> {
-        Ok(DataColumnsByRangeRequest {
+        Ok(DataColumnsByRangeRequest::<P> {
             start_slot: 0,
             count: 0,
-            columns: ContiguousList::try_from(vec![0])?,
+            columns: Arc::new(ContiguousList::try_from(vec![0])?),
         }
         .to_ssz()?
         .len())
     }
 
     pub fn ssz_max_len() -> Result<usize> {
-        Ok(DataColumnsByRangeRequest {
+        Ok(DataColumnsByRangeRequest::<P> {
             start_slot: 0,
             count: 0,
-            columns: ContiguousList::full(0),
+            columns: Arc::new(ContiguousList::full(0)),
         }
         .to_ssz()?
         .len())
@@ -658,33 +773,26 @@ impl BlobsByRootRequest {
 
 /// Request a number of data columns from a peer.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DataColumnsByRootRequest {
+pub struct DataColumnsByRootRequest<P: Preset> {
     /// The list of beacon block roots and column indices being requested.
-    pub data_column_ids: DynamicList<DataColumnIdentifier>,
+    pub data_column_ids: DynamicList<DataColumnsByRootIdentifier<P>>,
 }
 
-impl DataColumnsByRootRequest {
+impl<P: Preset> DataColumnsByRootRequest<P> {
     pub fn new(
         config: &ChainConfig,
-        data_column_identifiers: impl Iterator<Item = DataColumnIdentifier>,
+        data_column_identifiers: impl Iterator<Item = DataColumnsByRootIdentifier<P>>,
     ) -> Self {
         let data_column_ids = DynamicList::from_iter_with_maximum(
             data_column_identifiers,
-            config.max_request_data_column_sidecars as usize,
+            config.max_request_blocks_deneb as usize,
         );
 
         Self { data_column_ids }
     }
 
-    pub fn group_by_ordered_block_root(&self) -> Vec<(H256, Vec<ColumnIndex>)> {
-        let mut column_indexes_by_block = BTreeMap::<H256, Vec<ColumnIndex>>::new();
-        for request_id in self.data_column_ids.as_ref() {
-            column_indexes_by_block
-                .entry(request_id.block_root)
-                .or_default()
-                .push(request_id.index);
-        }
-        column_indexes_by_block.into_iter().collect()
+    pub fn max_requested(&self) -> usize {
+        self.data_column_ids.iter().map(|id| id.columns.len()).sum()
     }
 }
 
@@ -888,6 +996,30 @@ impl<P: Preset> RpcSuccessResponse<P> {
             RpcSuccessResponse::LightClientUpdatesByRange(_) => Protocol::LightClientUpdatesByRange,
         }
     }
+
+    pub fn slot(&self) -> Option<Slot> {
+        match self {
+            RpcSuccessResponse::BlocksByRange(block) | RpcSuccessResponse::BlocksByRoot(block) => {
+                Some(block.message().slot())
+            }
+            RpcSuccessResponse::BlobsByRange(blob) | RpcSuccessResponse::BlobsByRoot(blob) => {
+                Some(blob.signed_block_header.message.slot)
+            }
+            RpcSuccessResponse::DataColumnsByRange(column)
+            | RpcSuccessResponse::DataColumnsByRoot(column) => {
+                Some(column.signed_block_header.message.slot)
+            }
+            RpcSuccessResponse::LightClientBootstrap(b) => Some(b.slot()),
+            RpcSuccessResponse::LightClientOptimisticUpdate(update) => {
+                Some(update.signature_slot())
+            }
+            RpcSuccessResponse::LightClientFinalityUpdate(update) => Some(update.signature_slot()),
+            RpcSuccessResponse::LightClientUpdatesByRange(update) => Some(update.signature_slot()),
+            RpcSuccessResponse::MetaData(_)
+            | RpcSuccessResponse::Status(_)
+            | RpcSuccessResponse::Pong(_) => None,
+        }
+    }
 }
 
 impl std::fmt::Display for RpcErrorResponse {
@@ -906,7 +1038,7 @@ impl std::fmt::Display for RpcErrorResponse {
 
 impl std::fmt::Display for StatusMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Status Message: Fork Digest: {:?}, Finalized Root: {}, Finalized Epoch: {}, Head Root: {}, Head Slot: {}", self.fork_digest, self.finalized_root, self.finalized_epoch, self.head_root, self.head_slot)
+        write!(f, "Status Message: Fork Digest: {:?}, Finalized Root: {}, Finalized Epoch: {}, Head Root: {}, Head Slot: {} Earliest available slot: {:?}", self.fork_digest(), self.finalized_root(), self.finalized_epoch(), self.head_root(), self.head_slot(), self.earliest_available_slot())
     }
 }
 
@@ -1037,12 +1169,56 @@ impl std::fmt::Display for BlobsByRangeRequest {
     }
 }
 
-impl std::fmt::Display for DataColumnsByRootRequest {
+impl<P: Preset> std::fmt::Display for DataColumnsByRootRequest<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Request: DataColumnsByRoot: Number of Requested Data Column Ids: {}",
             self.data_column_ids.len()
         )
+    }
+}
+
+impl<P: Preset> std::fmt::Display for DataColumnsByRangeRequest<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Request: DataColumnsByRange: Start Slot: {}, Count: {}, Number of Requested Columns Ids: {}",
+            self.start_slot,
+            self.count,
+            self.columns.len()
+        )
+    }
+}
+
+// TO DO - tracing subscriber
+impl slog::KV for StatusMessage {
+    fn serialize(
+        &self,
+        record: &slog::Record,
+        serializer: &mut dyn slog::Serializer,
+    ) -> slog::Result {
+        use slog::Value;
+        serializer.emit_arguments("fork_digest", &format_args!("{:?}", self.fork_digest()))?;
+        Value::serialize(
+            &self.finalized_epoch(),
+            record,
+            "finalized_epoch",
+            serializer,
+        )?;
+        serializer.emit_arguments("finalized_root", &format_args!("{}", self.finalized_root()))?;
+        Value::serialize(&self.head_slot(), record, "head_slot", serializer)?;
+        serializer.emit_arguments("head_root", &format_args!("{}", self.head_root()))?;
+        Value::serialize(
+            &self.earliest_available_slot(),
+            record,
+            "earliest_available_slot",
+            serializer,
+        )?;
+        serializer.emit_arguments(
+            "earliest_available_slot",
+            &format_args!("{:?}", self.earliest_available_slot()),
+        )?;
+        slog::Result::Ok(())
     }
 }

@@ -11,6 +11,7 @@ use crate::types::ForkContext;
 use fnv::FnvHashMap;
 use futures::prelude::*;
 use futures::SinkExt;
+use helper_functions::misc;
 use libp2p::swarm::handler::{
     ConnectionEvent, ConnectionHandler, ConnectionHandlerEvent, DialUpgradeError,
     FullyNegotiatedInbound, FullyNegotiatedOutbound, StreamUpgradeError, SubstreamProtocol,
@@ -38,6 +39,9 @@ const SHUTDOWN_TIMEOUT_SECS: u64 = 15;
 
 /// Maximum number of simultaneous inbound substreams we keep for this peer.
 const MAX_INBOUND_SUBSTREAMS: usize = 32;
+
+/// Timeout that will be used for inbound and outbound responses.
+const RESP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Identifier of inbound and outbound substreams from the handler's perspective.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
@@ -140,9 +144,6 @@ where
 
     /// Waker, to be sure the handler gets polled when needed.
     waker: Option<std::task::Waker>,
-
-    /// Timeout that will me used for inbound and outbound responses.
-    resp_timeout: Duration,
 }
 
 enum HandlerState {
@@ -225,7 +226,6 @@ where
     pub fn new(
         listen_protocol: SubstreamProtocol<RPCProtocol<P>, ()>,
         fork_context: Arc<ForkContext>,
-        resp_timeout: Duration,
         peer_id: PeerId,
         connection_id: ConnectionId,
     ) -> Self {
@@ -247,7 +247,6 @@ where
             outbound_io_error_retries: 0,
             fork_context,
             waker: None,
-            resp_timeout,
         }
     }
 
@@ -543,8 +542,7 @@ where
                                 // If this substream has not ended, we reset the timer.
                                 // Each chunk is allowed RESPONSE_TIMEOUT to be sent.
                                 if let Some(ref delay_key) = info.delay_key {
-                                    self.inbound_substreams_delay
-                                        .reset(delay_key, self.resp_timeout);
+                                    self.inbound_substreams_delay.reset(delay_key, RESP_TIMEOUT);
                                 }
 
                                 // The stream may be currently idle. Attempt to process more
@@ -711,7 +709,7 @@ where
                                     };
                                 substream_entry.max_remaining_chunks = Some(max_remaining_chunks);
                                 self.outbound_substreams_delay
-                                    .reset(delay_key, self.resp_timeout);
+                                    .reset(delay_key, RESP_TIMEOUT);
                             }
                         }
 
@@ -912,7 +910,7 @@ where
         }
 
         let (req, substream) = substream;
-        let phase = self.fork_context.current_fork();
+        let phase = self.fork_context.current_fork_name();
         let chain_config = &self.fork_context.chain_config();
 
         match &req {
@@ -932,7 +930,8 @@ where
                 }
             }
             RequestType::BlobsByRange(request) => {
-                let max_requested_blobs = request.max_blobs_requested(&chain_config, phase);
+                let epoch = misc::compute_epoch_at_slot::<P>(request.start_slot);
+                let max_requested_blobs = request.max_blobs_requested(&chain_config, epoch);
                 let max_allowed = chain_config.max_request_blob_sidecars(phase);
                 if max_requested_blobs > max_allowed {
                     self.events_out.push(HandlerEvent::Err(HandlerErr::Inbound {
@@ -949,7 +948,8 @@ where
             _ => {}
         };
 
-        let max_responses = req.max_responses(&chain_config, self.fork_context.current_fork());
+        let max_responses =
+            req.max_responses(&chain_config, self.fork_context.current_fork_epoch());
 
         // store requests that expect responses
         if max_responses > 0 {
@@ -957,7 +957,7 @@ where
                 // Store the stream and tag the output.
                 let delay_key = self
                     .inbound_substreams_delay
-                    .insert(self.current_inbound_substream_id, self.resp_timeout);
+                    .insert(self.current_inbound_substream_id, RESP_TIMEOUT);
                 let awaiting_stream = InboundState::Idle(substream);
                 self.inbound_substreams.insert(
                     self.current_inbound_substream_id,
@@ -1021,7 +1021,8 @@ where
         let chain_config = &self.fork_context.chain_config();
 
         // add the stream to substreams if we expect a response, otherwise drop the stream.
-        let max_responses = request.max_responses(&chain_config, self.fork_context.current_fork());
+        let max_responses =
+            request.max_responses(&chain_config, self.fork_context.current_fork_epoch());
         if max_responses > 0 {
             let max_remaining_chunks = if request.expect_exactly_one_response() {
                 // Currently enforced only for multiple responses
@@ -1032,7 +1033,7 @@ where
             // new outbound request. Store the stream and tag the output.
             let delay_key = self
                 .outbound_substreams_delay
-                .insert(self.current_outbound_substream_id, self.resp_timeout);
+                .insert(self.current_outbound_substream_id, RESP_TIMEOUT);
             let awaiting_stream = OutboundSubstreamState::RequestPendingResponse {
                 substream: Box::new(substream),
                 request,

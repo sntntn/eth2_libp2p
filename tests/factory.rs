@@ -1,14 +1,12 @@
 use bls::SignatureBytes;
+use helper_functions::misc;
 use ssz::{BitList, ContiguousList};
 use types::{
     altair::containers::{
         BeaconBlock as AltairBeaconBlock, BeaconBlockBody as AltairBeaconBlockBody,
         SignedBeaconBlock as AltairSignedBeaconBlock,
     },
-    // bellatrix::containers::{
-    //     BeaconBlock as BellatrixBeaconBlock, BeaconBlockBody as BellatrixBeaconBlockBody,
-    //     SignedBeaconBlock as BellatrixSignedBeaconBlock,
-    // },
+    config::Config,
     phase0::containers::{
         Attestation, AttesterSlashing, BeaconBlock as Phase0BeaconBlock,
         BeaconBlockBody as Phase0BeaconBlockBody, BeaconBlockHeader, Deposit, IndexedAttestation,
@@ -35,7 +33,7 @@ pub fn full_phase0_signed_beacon_block<P: Preset>() -> Phase0SignedBeaconBlock<P
     }
 }
 
-pub fn full_altair_signed_beacon_block<P: Preset>() -> AltairSignedBeaconBlock<P> {
+pub fn full_altair_signed_beacon_block<P: Preset>(config: &Config) -> AltairSignedBeaconBlock<P> {
     AltairSignedBeaconBlock {
         message: AltairBeaconBlock {
             body: AltairBeaconBlockBody {
@@ -46,6 +44,7 @@ pub fn full_altair_signed_beacon_block<P: Preset>() -> AltairSignedBeaconBlock<P
                 voluntary_exits: ContiguousList::full(nonzero_signed_voluntary_exit()),
                 ..AltairBeaconBlockBody::default()
             },
+            slot: misc::compute_start_slot_at_epoch::<P>(config.altair_fork_epoch),
             ..AltairBeaconBlock::default()
         },
         signature: SignatureBytes::default(),

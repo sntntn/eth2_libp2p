@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Duration;
 use std_ext::ArcExt as _;
 use tracing::instrument;
 use types::{config::Config as ChainConfig, preset::Preset};
@@ -39,7 +38,7 @@ pub use handler::SubstreamId;
 pub use methods::{
     BlobsByRangeRequest, BlobsByRootRequest, BlocksByRangeRequest, BlocksByRootRequest,
     GoodbyeReason, LightClientBootstrapRequest, ResponseTermination, RpcErrorResponse,
-    StatusMessage,
+    StatusMessage, StatusMessageV1, StatusMessageV2,
 };
 pub use protocol::{Protocol, RPCError};
 
@@ -150,12 +149,6 @@ pub struct RPCMessage<Id, P: Preset> {
 
 type BehaviourAction<Id, P> = ToSwarm<RPCMessage<Id, P>, RPCSend<Id, P>>;
 
-pub struct NetworkParams {
-    pub max_payload_size: usize,
-    pub ttfb_timeout: Duration,
-    pub resp_timeout: Duration,
-}
-
 /// Implements the libp2p `NetworkBehaviour` trait and therefore manages network-level
 /// logic.
 pub struct RPC<Id: ReqId, P: Preset> {
@@ -170,8 +163,6 @@ pub struct RPC<Id: ReqId, P: Preset> {
     events: Vec<BehaviourAction<Id, P>>,
     fork_context: Arc<ForkContext>,
     enable_light_client_server: bool,
-    /// Networking constant values
-    network_params: NetworkParams,
     /// A sequential counter indicating when data gets modified.
     seq_number: u64,
 }
@@ -189,7 +180,6 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
         enable_light_client_server: bool,
         inbound_rate_limiter_config: Option<InboundRateLimiterConfig>,
         outbound_rate_limiter_config: Option<OutboundRateLimiterConfig>,
-        network_params: NetworkParams,
         seq_number: u64,
     ) -> Self {
         let response_limiter = inbound_rate_limiter_config.map(|config| {
@@ -210,7 +200,6 @@ impl<Id: ReqId, P: Preset> RPC<Id, P> {
             events: Vec::new(),
             fork_context,
             enable_light_client_server,
-            network_params,
             seq_number,
         }
     }
@@ -383,7 +372,6 @@ where
                 max_rpc_size: self.chain_config.max_payload_size,
                 enable_light_client_server: self.enable_light_client_server,
                 phantom: PhantomData,
-                ttfb_timeout: self.network_params.ttfb_timeout,
             },
             (),
         );
@@ -393,7 +381,6 @@ where
         let handler = RPCHandler::new(
             protocol,
             self.fork_context.clone(),
-            self.network_params.resp_timeout,
             peer_id,
             connection_id,
         );
@@ -416,7 +403,6 @@ where
                 max_rpc_size: self.chain_config.max_payload_size,
                 enable_light_client_server: self.enable_light_client_server,
                 phantom: PhantomData,
-                ttfb_timeout: self.network_params.ttfb_timeout,
             },
             (),
         );
@@ -427,7 +413,6 @@ where
         let handler = RPCHandler::new(
             protocol,
             self.fork_context.clone(),
-            self.network_params.resp_timeout,
             peer_id,
             connection_id,
         );

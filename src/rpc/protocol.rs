@@ -4,6 +4,7 @@ use crate::types::ForkContext;
 use futures::future::BoxFuture;
 use futures::prelude::{AsyncRead, AsyncWrite};
 use futures::{FutureExt, StreamExt};
+use helper_functions::misc;
 use libp2p::core::{InboundUpgrade, UpgradeInfo};
 use ssz::{ReadError, SszSize as _, SszWrite as _, WriteError, H256};
 use std::io;
@@ -13,14 +14,14 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use std_ext::ArcExt as _;
 use strum::{AsRefStr, Display, EnumString, IntoStaticStr};
-use tokio_io_timeout::TimeoutStream;
 use tokio_util::{
     codec::Framed,
     compat::{Compat, FuturesAsyncReadCompatExt},
 };
 use typenum::Unsigned as _;
 use types::deneb::containers::BlobIdentifier;
-use types::eip7594::DataColumnIdentifier;
+use types::fulu::containers::DataColumnSidecar;
+use types::phase0::primitives::Epoch;
 use types::{
     altair::containers::{
         LightClientBootstrap as AltairLightClientBootstrap,
@@ -29,7 +30,6 @@ use types::{
         LightClientUpdate as AltairLightClientUpdate,
     },
     config::Config as ChainConfig,
-    eip7594::DataColumnSidecar,
     nonstandard::Phase,
     preset::{Mainnet, Preset, PresetName},
 };
@@ -99,7 +99,7 @@ fn rpc_light_client_updates_by_range_limits_by_fork<P: Preset>(current_fork: Pha
     match &current_fork {
         Phase::Phase0 => RpcLimits::new(0, 0),
         Phase::Altair | Phase::Bellatrix => RpcLimits::new(altair_fixed_len, altair_fixed_len),
-        Phase::Capella | Phase::Deneb | Phase::Electra => RpcLimits::new(
+        Phase::Capella | Phase::Deneb | Phase::Electra | Phase::Fulu => RpcLimits::new(
             altair_fixed_len,
             altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
         ),
@@ -116,6 +116,10 @@ fn rpc_light_client_finality_update_limits_by_fork<P: Preset>(current_fork: Phas
             altair_fixed_len,
             altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
         ),
+        Phase::Fulu => RpcLimits::new(
+            altair_fixed_len,
+            altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
+        ),
     }
 }
 
@@ -129,6 +133,10 @@ fn rpc_light_client_optimistic_update_limits_by_fork<P: Preset>(current_fork: Ph
             altair_fixed_len,
             altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
         ),
+        Phase::Fulu => RpcLimits::new(
+            altair_fixed_len,
+            altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
+        ),
     }
 }
 
@@ -139,6 +147,10 @@ fn rpc_light_client_bootstrap_limits_by_fork<P: Preset>(current_fork: Phase) -> 
         Phase::Phase0 => RpcLimits::new(0, 0),
         Phase::Altair | Phase::Bellatrix => RpcLimits::new(altair_fixed_len, altair_fixed_len),
         Phase::Capella | Phase::Deneb | Phase::Electra => RpcLimits::new(
+            altair_fixed_len,
+            altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
+        ),
+        Phase::Fulu => RpcLimits::new(
             altair_fixed_len,
             altair_fixed_len + P::MaxExtraDataBytes::USIZE * u8::SIZE.get(),
         ),
@@ -223,6 +235,7 @@ pub enum Encoding {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SupportedProtocol {
     StatusV1,
+    StatusV2,
     GoodbyeV1,
     BlocksByRangeV1,
     BlocksByRangeV2,
@@ -246,6 +259,7 @@ impl SupportedProtocol {
     pub fn version_string(&self) -> &'static str {
         match self {
             SupportedProtocol::StatusV1 => "1",
+            SupportedProtocol::StatusV2 => "2",
             SupportedProtocol::GoodbyeV1 => "1",
             SupportedProtocol::BlocksByRangeV1 => "1",
             SupportedProtocol::BlocksByRangeV2 => "2",
@@ -269,6 +283,7 @@ impl SupportedProtocol {
     pub fn protocol(&self) -> Protocol {
         match self {
             SupportedProtocol::StatusV1 => Protocol::Status,
+            SupportedProtocol::StatusV2 => Protocol::Status,
             SupportedProtocol::GoodbyeV1 => Protocol::Goodbye,
             SupportedProtocol::BlocksByRangeV1 => Protocol::BlocksByRange,
             SupportedProtocol::BlocksByRangeV2 => Protocol::BlocksByRange,
@@ -293,6 +308,7 @@ impl SupportedProtocol {
 
     fn currently_supported(fork_context: &Arc<ForkContext>) -> Vec<ProtocolId> {
         let mut supported = vec![
+            ProtocolId::new(Self::StatusV2, Encoding::SSZSnappy),
             ProtocolId::new(Self::StatusV1, Encoding::SSZSnappy),
             ProtocolId::new(Self::GoodbyeV1, Encoding::SSZSnappy),
             // V2 variants have higher preference then V1
@@ -302,7 +318,7 @@ impl SupportedProtocol {
             ProtocolId::new(Self::BlocksByRootV1, Encoding::SSZSnappy),
             ProtocolId::new(Self::PingV1, Encoding::SSZSnappy),
         ];
-        if fork_context.chain_config().is_eip7594_fork_epoch_set() {
+        if fork_context.chain_config().is_peerdas_scheduled() {
             supported.extend_from_slice(&[
                 // V3 variants have higher preference for protocol negotation
                 ProtocolId::new(Self::MetaDataV3, Encoding::SSZSnappy),
@@ -321,7 +337,7 @@ impl SupportedProtocol {
                 ProtocolId::new(SupportedProtocol::BlobsByRangeV1, Encoding::SSZSnappy),
             ]);
         }
-        if fork_context.chain_config().is_eip7594_fork_epoch_set() {
+        if fork_context.chain_config().is_peerdas_scheduled() {
             supported.extend_from_slice(&[
                 ProtocolId::new(SupportedProtocol::DataColumnsByRootV1, Encoding::SSZSnappy),
                 ProtocolId::new(SupportedProtocol::DataColumnsByRangeV1, Encoding::SSZSnappy),
@@ -347,7 +363,6 @@ pub struct RPCProtocol<P: Preset> {
     pub max_rpc_size: usize,
     pub enable_light_client_server: bool,
     pub phantom: PhantomData<P>,
-    pub ttfb_timeout: Duration,
 }
 
 impl<P: Preset> UpgradeInfo for RPCProtocol<P> {
@@ -415,10 +430,14 @@ impl AsRef<str> for ProtocolId {
 
 impl ProtocolId {
     /// Returns min and max size for messages of given protocol id requests.
-    pub fn rpc_request_limits(&self, chain_config: &ChainConfig, phase: Phase) -> RpcLimits {
+    pub fn rpc_request_limits<P: Preset>(
+        &self,
+        chain_config: &ChainConfig,
+        phase: Phase,
+    ) -> RpcLimits {
         match self.versioned_protocol.protocol() {
             Protocol::Status => {
-                RpcLimits::new(StatusMessage::SIZE.get(), StatusMessage::SIZE.get())
+                RpcLimits::new(StatusMessageV1::SIZE.get(), StatusMessageV2::SIZE.get())
             }
             Protocol::Goodbye => {
                 RpcLimits::new(GoodbyeReason::SIZE.get(), GoodbyeReason::SIZE.get())
@@ -440,14 +459,12 @@ impl ProtocolId {
                 0,
                 chain_config.max_request_blob_sidecars(phase) as usize * BlobIdentifier::SIZE.get(),
             ),
-            Protocol::DataColumnsByRoot => RpcLimits::new(
-                0,
-                chain_config.max_request_data_column_sidecars as usize
-                    * DataColumnIdentifier::SIZE.get(),
-            ),
+            Protocol::DataColumnsByRoot => {
+                RpcLimits::new(0, chain_config.max_data_columns_by_root_request::<P>())
+            }
             Protocol::DataColumnsByRange => RpcLimits::new(
-                DataColumnsByRangeRequest::ssz_min_len().unwrap_or_default(),
-                DataColumnsByRangeRequest::ssz_max_len()
+                DataColumnsByRangeRequest::<P>::ssz_min_len().unwrap_or_default(),
+                DataColumnsByRangeRequest::<P>::ssz_max_len()
                     .expect("Unable to get DataColumnsByRange ssz_max_len"),
             ),
             Protocol::Ping => RpcLimits::new(Ping::SIZE.get(), Ping::SIZE.get()),
@@ -466,30 +483,38 @@ impl ProtocolId {
     pub fn rpc_response_limits<P: Preset>(&self, fork_context: &ForkContext) -> RpcLimits {
         match self.versioned_protocol.protocol() {
             Protocol::Status => {
-                RpcLimits::new(StatusMessage::SIZE.get(), StatusMessage::SIZE.get())
+                RpcLimits::new(StatusMessageV1::SIZE.get(), StatusMessageV2::SIZE.get())
             }
             Protocol::Goodbye => RpcLimits::new(0, 0), // Goodbye request has no response
-            Protocol::BlocksByRange => rpc_block_limits_by_fork(fork_context.current_fork()),
-            Protocol::BlocksByRoot => rpc_block_limits_by_fork(fork_context.current_fork()),
+            Protocol::BlocksByRange => rpc_block_limits_by_fork(fork_context.current_fork_name()),
+            Protocol::BlocksByRoot => rpc_block_limits_by_fork(fork_context.current_fork_name()),
             Protocol::BlobsByRange => rpc_blob_limits::<P>(),
             Protocol::BlobsByRoot => rpc_blob_limits::<P>(),
-            Protocol::DataColumnsByRoot => rpc_data_column_limits::<P>(fork_context.current_fork()),
+            Protocol::DataColumnsByRoot => {
+                rpc_data_column_limits::<P>(fork_context.current_fork_name())
+            }
             Protocol::DataColumnsByRange => {
-                rpc_data_column_limits::<P>(fork_context.current_fork())
+                rpc_data_column_limits::<P>(fork_context.current_fork_name())
             }
             Protocol::Ping => RpcLimits::new(Ping::SIZE.get(), Ping::SIZE.get()),
             Protocol::MetaData => RpcLimits::new(MetaDataV1::SIZE.get(), MetaDataV3::SIZE.get()),
             Protocol::LightClientBootstrap => {
-                rpc_light_client_bootstrap_limits_by_fork::<P>(fork_context.current_fork())
+                rpc_light_client_bootstrap_limits_by_fork::<P>(fork_context.current_fork_name())
             }
             Protocol::LightClientOptimisticUpdate => {
-                rpc_light_client_optimistic_update_limits_by_fork::<P>(fork_context.current_fork())
+                rpc_light_client_optimistic_update_limits_by_fork::<P>(
+                    fork_context.current_fork_name(),
+                )
             }
             Protocol::LightClientFinalityUpdate => {
-                rpc_light_client_finality_update_limits_by_fork::<P>(fork_context.current_fork())
+                rpc_light_client_finality_update_limits_by_fork::<P>(
+                    fork_context.current_fork_name(),
+                )
             }
             Protocol::LightClientUpdatesByRange => {
-                rpc_light_client_updates_by_range_limits_by_fork::<P>(fork_context.current_fork())
+                rpc_light_client_updates_by_range_limits_by_fork::<P>(
+                    fork_context.current_fork_name(),
+                )
             }
         }
     }
@@ -509,6 +534,7 @@ impl ProtocolId {
             | SupportedProtocol::LightClientFinalityUpdateV1
             | SupportedProtocol::LightClientUpdatesByRangeV1 => true,
             SupportedProtocol::StatusV1
+            | SupportedProtocol::StatusV2
             | SupportedProtocol::BlocksByRootV1
             | SupportedProtocol::BlocksByRangeV1
             | SupportedProtocol::PingV1
@@ -544,7 +570,7 @@ impl ProtocolId {
 
 pub type InboundOutput<TSocket, P> = (RequestType<P>, InboundFramed<TSocket, P>);
 pub type InboundFramed<TSocket, P> =
-    Framed<std::pin::Pin<Box<TimeoutStream<Compat<TSocket>>>>, SSZSnappyInboundCodec<P>>;
+    Framed<std::pin::Pin<Box<Compat<TSocket>>>, SSZSnappyInboundCodec<P>>;
 
 impl<TSocket, P> InboundUpgrade<TSocket> for RPCProtocol<P>
 where
@@ -569,10 +595,7 @@ where
                 ),
             };
 
-            let mut timed_socket = TimeoutStream::new(socket);
-            timed_socket.set_read_timeout(Some(self.ttfb_timeout));
-
-            let socket = Framed::new(Box::pin(timed_socket), codec);
+            let socket = Framed::new(Box::pin(socket), codec);
 
             // MetaData requests should be empty, return the stream
             match versioned_protocol {
@@ -618,8 +641,8 @@ pub enum RequestType<P: Preset> {
     BlocksByRoot(BlocksByRootRequest),
     BlobsByRange(BlobsByRangeRequest),
     BlobsByRoot(BlobsByRootRequest),
-    DataColumnsByRoot(DataColumnsByRootRequest),
-    DataColumnsByRange(DataColumnsByRangeRequest),
+    DataColumnsByRoot(DataColumnsByRootRequest<P>),
+    DataColumnsByRange(DataColumnsByRangeRequest<P>),
     LightClientBootstrap(LightClientBootstrapRequest),
     LightClientOptimisticUpdate,
     LightClientFinalityUpdate,
@@ -633,16 +656,19 @@ impl<P: Preset> RequestType<P> {
     /* These functions are used in the handler for stream management */
 
     /// Maximum number of responses expected for this request.
-    pub fn max_responses(&self, chain_config: &ChainConfig, current_phase: Phase) -> u64 {
+    pub fn max_responses(&self, chain_config: &ChainConfig, _epoch: Epoch) -> u64 {
         match self {
             RequestType::Status(_) => 1,
             RequestType::Goodbye(_) => 0,
             RequestType::BlocksByRange(req) => req.count(),
             RequestType::BlocksByRoot(req) => req.len() as u64,
-            RequestType::BlobsByRange(req) => req.max_blobs_requested(chain_config, current_phase),
+            RequestType::BlobsByRange(req) => {
+                let epoch = misc::compute_epoch_at_slot::<P>(req.start_slot);
+                req.max_blobs_requested(chain_config, epoch)
+            }
             RequestType::BlobsByRoot(req) => req.blob_ids.len() as u64,
-            RequestType::DataColumnsByRoot(req) => req.data_column_ids.len() as u64,
-            RequestType::DataColumnsByRange(req) => req.max_requested::<P>(),
+            RequestType::DataColumnsByRoot(req) => req.max_requested() as u64,
+            RequestType::DataColumnsByRange(req) => req.max_requested(),
             RequestType::Ping(_) => 1,
             RequestType::MetaData(_) => 1,
             RequestType::LightClientBootstrap(_) => 1,
@@ -655,7 +681,10 @@ impl<P: Preset> RequestType<P> {
     /// Gives the corresponding `SupportedProtocol` to this request.
     pub fn versioned_protocol(&self) -> SupportedProtocol {
         match self {
-            RequestType::Status(_) => SupportedProtocol::StatusV1,
+            RequestType::Status(req) => match req {
+                StatusMessage::V1(_) => SupportedProtocol::StatusV1,
+                StatusMessage::V2(_) => SupportedProtocol::StatusV2,
+            },
             RequestType::Goodbye(_) => SupportedProtocol::GoodbyeV1,
             RequestType::BlocksByRange(req) => match req {
                 OldBlocksByRangeRequest::V1(_) => SupportedProtocol::BlocksByRangeV1,
@@ -714,10 +743,10 @@ impl<P: Preset> RequestType<P> {
     pub fn supported_protocols(&self) -> Vec<ProtocolId> {
         match self {
             // add more protocols when versions/encodings are supported
-            RequestType::Status(_) => vec![ProtocolId::new(
-                SupportedProtocol::StatusV1,
-                Encoding::SSZSnappy,
-            )],
+            RequestType::Status(_) => vec![
+                ProtocolId::new(SupportedProtocol::StatusV2, Encoding::SSZSnappy),
+                ProtocolId::new(SupportedProtocol::StatusV1, Encoding::SSZSnappy),
+            ],
             RequestType::Goodbye(_) => vec![ProtocolId::new(
                 SupportedProtocol::GoodbyeV1,
                 Encoding::SSZSnappy,
@@ -967,7 +996,7 @@ mod tests {
         );
         assert_eq!(
             SIGNED_BEACON_BLOCK_ALTAIR_MAX,
-            factory::full_altair_signed_beacon_block::<Mainnet>()
+            factory::full_altair_signed_beacon_block::<Mainnet>(&config)
                 .to_ssz()
                 .unwrap()
                 .len(),

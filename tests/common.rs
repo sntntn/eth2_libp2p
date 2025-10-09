@@ -77,6 +77,7 @@ pub async fn build_libp2p_instance<P: Preset>(
 
     let (shutdown_tx, _) = futures::channel::mpsc::channel(1);
     let executor = TaskExecutor::new(shutdown_tx);
+    let custody_group_count = chain_config.custody_requirement;
     let libp2p_context = Context {
         chain_config: chain_config.clone_arc(),
         config,
@@ -86,7 +87,7 @@ pub async fn build_libp2p_instance<P: Preset>(
     };
 
     Libp2pInstance(
-        LibP2PService::new(chain_config.clone(), executor, libp2p_context)
+        LibP2PService::new(chain_config.clone(), executor, libp2p_context, custody_group_count)
             .await
             .expect("should build libp2p instance")
             .0,

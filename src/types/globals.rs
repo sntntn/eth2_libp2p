@@ -1,17 +1,20 @@
 //! A collection of variables that are accessible outside of the network thread itself.
-use crate::eip7594::{columns_for_data_column_subnet, compute_custody_subnets, from_column_index};
+use super::TopicConfig;
 use crate::peer_manager::peerdb::PeerDB;
 use crate::rpc::{MetaData, MetaDataV3};
 use crate::types::{BackFillState, SyncState};
 use crate::{Client, Enr, EnrExt, GossipTopic, Multiaddr, NetworkConfig, PeerId};
-use itertools::Itertools as _;
+use eip_7594::{compute_subnets_from_custody_group, get_custody_groups};
+use helper_functions::misc::compute_subnet_for_data_column_sidecar;
+use logging::error_with_peers;
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std_ext::ArcExt as _;
 use types::config::Config as ChainConfig;
-use types::eip7594::ColumnIndex;
+use types::fulu::primitives::ColumnIndex;
 use types::phase0::primitives::SubnetId;
+use types::preset::Preset;
 
 pub struct NetworkGlobals {
     /// Ethereum chain configuration. Immutable after initialization.
@@ -33,8 +36,7 @@ pub struct NetworkGlobals {
     /// The current state of the backfill sync.
     pub backfill_state: RwLock<BackFillState>,
     /// The computed sampling subnets and columns is stored to avoid re-computing.
-    pub sampling_subnets: Vec<SubnetId>,
-    pub sampling_columns: Vec<ColumnIndex>,
+    sampling_subnets: RwLock<HashSet<SubnetId>>,
     /// Target subnet peers.
     pub target_subnet_peers: usize,
     /// Network-related configuration. Immutable after initialization.
@@ -42,7 +44,7 @@ pub struct NetworkGlobals {
 }
 
 impl NetworkGlobals {
-    pub fn new(
+    pub fn new<P: Preset>(
         config: Arc<ChainConfig>,
         enr: Enr,
         local_metadata: MetaData,
@@ -51,29 +53,33 @@ impl NetworkGlobals {
         target_subnet_peers: usize,
         network_config: Arc<NetworkConfig>,
     ) -> Self {
-        let (sampling_subnets, sampling_columns) = if config.is_eip7594_fork_epoch_set() {
-            let node_id = enr.node_id().raw();
+        let node_id = enr.node_id().raw();
 
-            let custody_subnet_count = local_metadata
-                .custody_subnet_count()
-                .expect("custody subnet count must be set if PeerDAS is scheduled");
-
-            let subnet_sampling_size = std::cmp::max(custody_subnet_count, config.samples_per_slot);
-
-            let sampling_subnets = compute_custody_subnets(node_id, subnet_sampling_size)
-                .expect("sampling subnet count must be valid")
-                .collect::<Vec<_>>();
-
-            let sampling_columns = sampling_subnets
-                .iter()
-                .flat_map(|subnet| columns_for_data_column_subnet(*subnet))
-                .sorted()
-                .collect();
-
-            (sampling_subnets, sampling_columns)
-        } else {
-            (vec![], vec![])
+        let custody_group_count = match local_metadata.custody_group_count() {
+            Some(cgc) if cgc <= config.number_of_custody_groups => cgc,
+            _ => {
+                if config.is_peerdas_scheduled() {
+                    error_with_peers!(
+                        info = "falling back to default custody requirement",
+                        "custody_group_count from metadata is either invalid or not set. This is a bug!"
+                    );
+                }
+                config.custody_requirement
+            }
         };
+
+        // The below `expect` calls will panic on start up if the chain spec config values used
+        // are invalid
+        let sampling_size = config.sampling_size_custody_groups(custody_group_count);
+        let custody_groups = get_custody_groups(node_id, sampling_size, &config)
+            .expect("should compute node custody groups");
+
+        let mut sampling_subnets = HashSet::new();
+        for custody_index in &custody_groups {
+            let subnets = compute_subnets_from_custody_group::<P>(*custody_index, &config)
+                .expect("should compute custody subnets for node");
+            sampling_subnets.extend(subnets);
+        }
 
         NetworkGlobals {
             config: config.clone_arc(),
@@ -85,10 +91,28 @@ impl NetworkGlobals {
             gossipsub_subscriptions: RwLock::new(HashSet::new()),
             sync_state: RwLock::new(SyncState::Stalled),
             backfill_state: RwLock::new(BackFillState::Paused),
-            sampling_subnets,
-            sampling_columns,
+            sampling_subnets: RwLock::new(sampling_subnets),
             target_subnet_peers,
             network_config,
+        }
+    }
+
+    /// Update the sampling subnets based on an updated cgc.
+    pub fn update_data_column_subnets<P: Preset>(&self, sampling_size: u64) {
+        // The below `expect` calls will panic on start up if the chain spec config values used
+        // are invalid
+        let custody_groups = get_custody_groups(
+            self.local_enr().node_id().raw(),
+            sampling_size,
+            &self.config,
+        )
+        .expect("should compute node custody groups");
+
+        let mut sampling_subnets = self.sampling_subnets.write();
+        for custody_index in &custody_groups {
+            let subnets = compute_subnets_from_custody_group::<P>(*custody_index, &self.config)
+                .expect("should compute custody subnets for node");
+            sampling_subnets.extend(subnets);
         }
     }
 
@@ -178,13 +202,46 @@ impl NetworkGlobals {
     pub fn custody_peers_for_column(&self, column_index: ColumnIndex) -> Vec<PeerId> {
         self.peers
             .read()
-            .good_custody_subnet_peer(from_column_index(column_index as usize, &self.config))
+            .good_custody_subnet_peer(compute_subnet_for_data_column_sidecar(
+                &self.config,
+                column_index,
+            ))
             .cloned()
             .collect::<Vec<_>>()
     }
 
+    /// Returns true if the peer is known and is a custodian of `column_index`
+    pub fn is_custody_peer_of(&self, column_index: ColumnIndex, peer_id: &PeerId) -> bool {
+        self.peers
+            .read()
+            .peer_info(peer_id)
+            .map(|info| {
+                info.is_assigned_to_custody_subnet(&compute_subnet_for_data_column_sidecar(
+                    &self.config,
+                    column_index,
+                ))
+            })
+            .unwrap_or(false)
+    }
+
+    // Returns the TopicConfig to compute the set of Gossip topics for a given fork
+    pub fn as_topic_config(&self) -> TopicConfig {
+        TopicConfig {
+            enable_light_client_server: self.network_config.enable_light_client_server,
+            subscribe_all_subnets: self.network_config.subscribe_all_subnets,
+            subscribe_all_data_column_subnets: self
+                .network_config
+                .subscribe_all_data_column_subnets,
+            sampling_subnets: self.sampling_subnets.read().clone(),
+        }
+    }
+
+    pub fn sampling_subnets(&self) -> HashSet<SubnetId> {
+        self.sampling_subnets.read().clone()
+    }
+
     /// TESTING ONLY. Build a dummy NetworkGlobals instance.
-    pub fn new_test_globals(
+    pub fn new_test_globals<P: Preset>(
         chain_config: Arc<ChainConfig>,
         trusted_peers: Vec<PeerId>,
         network_config: Arc<NetworkConfig>,
@@ -193,13 +250,13 @@ impl NetworkGlobals {
             seq_number: 0,
             attnets: Default::default(),
             syncnets: Default::default(),
-            custody_subnet_count: chain_config.custody_requirement,
+            custody_group_count: chain_config.custody_requirement,
         });
 
-        Self::new_test_globals_with_metadata(chain_config, trusted_peers, metadata, network_config)
+        Self::new_test_globals_with_metadata::<P>(chain_config, trusted_peers, metadata, network_config)
     }
 
-    pub(crate) fn new_test_globals_with_metadata(
+    pub(crate) fn new_test_globals_with_metadata<P: Preset>(
         chain_config: Arc<ChainConfig>,
         trusted_peers: Vec<PeerId>,
         metadata: MetaData,
@@ -209,7 +266,7 @@ impl NetworkGlobals {
         let keypair = libp2p::identity::secp256k1::Keypair::generate();
         let enr_key: discv5::enr::CombinedKey = discv5::enr::CombinedKey::from_secp256k1(&keypair);
         let enr = discv5::enr::Enr::builder().build(&enr_key).unwrap();
-        NetworkGlobals::new(
+        NetworkGlobals::new::<P>(
             chain_config,
             enr,
             metadata,
@@ -221,87 +278,62 @@ impl NetworkGlobals {
     }
 }
 
-// TODO(das): uncomment after merging and updating stubs
-// #[cfg(test)]
-// mod test {
-//     use slog::{o, Drain as _, Level};
 
-//     use super::*;
+//TO DO - tracing subscriber
+#[cfg(test)]
+mod test {
+    use slog::{o, Drain as _, Level};
+    use types::preset::Mainnet;
 
-//     pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-//         let decorator = slog_term::TermDecorator::new().build();
-//         let drain = slog_term::FullFormat::new(decorator).build().fuse();
-//         let drain = slog_async::Async::new(drain).build().fuse();
+    use super::*;
 
-//         if enabled {
-//             slog::Logger::root(drain.filter_level(level).fuse(), o!())
-//         } else {
-//             slog::Logger::root(drain.filter(|_| false).fuse(), o!())
-//         }
-//     }
+    pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
 
-//     #[test]
-//     fn test_sampling_subnets() {
-//         let log_level = Level::Debug;
-//         let enable_logging = false;
+        if enabled {
+            slog::Logger::root(drain.filter_level(level).fuse(), o!())
+        } else {
+            slog::Logger::root(drain.filter(|_| false).fuse(), o!())
+        }
+    }
 
-//         let log = build_log(log_level, enable_logging);
-//         let mut chain_config = ChainConfig::mainnet();
-//         chain_config.eip7594_fork_epoch = 0;
+    #[test]
+    fn test_sampling_subnets() {
+        let log_level = Level::Debug;
+        let enable_logging = false;
 
-//         let custody_subnet_count = chain_config.data_column_sidecar_subnet_count / 2;
-//         let subnet_sampling_size =
-//             std::cmp::max(custody_subnet_count, chain_config.samples_per_slot);
-//         let metadata = get_metadata(custody_subnet_count);
-//         let config = Arc::new(NetworkConfig::default());
+        let log = build_log(log_level, enable_logging);
+        let mut chain_config = ChainConfig::mainnet();
+        chain_config.fulu_fork_epoch = 0;
 
-//         let globals = NetworkGlobals::new_test_globals_with_metadata(
-//             Arc::new(chain_config),
-//             vec![],
-//             metadata,
-//             &log,
-//             config,
-//         );
-//         assert_eq!(
-//             globals.sampling_subnets.len(),
-//             subnet_sampling_size as usize
-//         );
-//     }
+        let custody_group_count = chain_config.number_of_custody_groups / 2;
+        let sampling_size = chain_config.sampling_size_custody_groups(custody_group_count);
+        let expected_sampling_subnet_count = sampling_size
+            * chain_config.data_column_sidecar_subnet_count
+            / chain_config.number_of_custody_groups;
+        let metadata = get_metadata(custody_group_count);
+        let config = Arc::new(NetworkConfig::default());
 
-//     #[test]
-//     fn test_sampling_columns() {
-//         let log_level = Level::Debug;
-//         let enable_logging = false;
+        let globals = NetworkGlobals::new_test_globals_with_metadata::<Mainnet>(
+            Arc::new(chain_config),
+            vec![],
+            metadata,
+            config,
+        );
+        assert_eq!(
+            globals.sampling_subnets.read().len(),
+            expected_sampling_subnet_count as usize
+        );
+    }
 
-//         let log = build_log(log_level, enable_logging);
-//         let mut chain_config = ChainConfig::mainnet();
-//         chain_config.eip7594_fork_epoch = 0;
-
-//         let custody_subnet_count = chain_config.data_column_sidecar_subnet_count / 2;
-//         let subnet_sampling_size =
-//             std::cmp::max(custody_subnet_count, chain_config.samples_per_slot);
-//         let metadata = get_metadata(custody_subnet_count);
-//         let config = Arc::new(NetworkConfig::default());
-
-//         let globals = NetworkGlobals::new_test_globals_with_metadata(
-//             Arc::new(chain_config),
-//             vec![],
-//             metadata,
-//             &log,
-//             config,
-//         );
-//         assert_eq!(
-//             globals.sampling_columns.len(),
-//             subnet_sampling_size as usize
-//         );
-//     }
-
-//     fn get_metadata(custody_subnet_count: u64) -> MetaData {
-//         MetaData::V3(MetaDataV3 {
-//             seq_number: 0,
-//             attnets: Default::default(),
-//             syncnets: Default::default(),
-//             custody_subnet_count,
-//         })
-//     }
-// }
+    fn get_metadata(custody_group_count: u64) -> MetaData {
+        MetaData::V3(MetaDataV3 {
+            seq_number: 0,
+            attnets: Default::default(),
+            syncnets: Default::default(),
+            custody_group_count,
+        })
+    }
+}

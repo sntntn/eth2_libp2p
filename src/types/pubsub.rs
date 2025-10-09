@@ -2,7 +2,6 @@
 
 use crate::types::{ForkContext, GossipEncoding, GossipKind, GossipTopic};
 use crate::TopicHash;
-use helper_functions::misc;
 use snap::raw::{decompress_len, Decoder, Encoder};
 use ssz::{SszReadDefault, SszWrite as _, WriteError};
 use std::boxed::Box;
@@ -21,12 +20,12 @@ use types::{
         SignedAggregateAndProof, SignedBeaconBlock,
     },
     deneb::containers::{BlobSidecar, SignedBeaconBlock as DenebBeaconBlock},
-    eip7594::DataColumnSidecar,
     electra::containers::{
         AttesterSlashing as ElectraAttesterSlashing,
         SignedAggregateAndProof as ElectraSignedAggregateAndProof,
         SignedBeaconBlock as ElectraBeaconBlock,
     },
+    fulu::containers::{DataColumnSidecar, SignedBeaconBlock as FuluSignedBeaconBlock},
     nonstandard::Phase,
     phase0::{
         containers::{
@@ -195,34 +194,37 @@ impl<P: Preset> PubsubMessage<P> {
                 // the ssz decoders
                 match gossip_topic.kind() {
                     GossipKind::BeaconAggregateAndProof => {
-                        let agg_and_proof =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                                Some(Phase::Phase0)
-                                | Some(Phase::Altair)
-                                | Some(Phase::Bellatrix)
-                                | Some(Phase::Capella)
-                                | Some(Phase::Deneb) => SignedAggregateAndProof::Phase0(
-                                    Phase0SignedAggregateAndProof::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Electra) => SignedAggregateAndProof::Electra(
+                        let agg_and_proof = match fork_context
+                            .get_fork_from_context_bytes(gossip_topic.fork_digest)
+                        {
+                            Some(Phase::Phase0)
+                            | Some(Phase::Altair)
+                            | Some(Phase::Bellatrix)
+                            | Some(Phase::Capella)
+                            | Some(Phase::Deneb) => SignedAggregateAndProof::Phase0(
+                                Phase0SignedAggregateAndProof::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Electra) | Some(Phase::Fulu) => {
+                                SignedAggregateAndProof::Electra(
                                     ElectraSignedAggregateAndProof::from_ssz_default(data)
                                         .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                None => {
-                                    return Err(format!(
-                                        "Unknown gossipsub fork digest: {:?}",
-                                        gossip_topic.fork_digest
-                                    ))
-                                }
-                            };
+                                )
+                            }
+                            None => {
+                                return Err(format!(
+                                    "Unknown gossipsub fork digest: {:?}",
+                                    gossip_topic.fork_digest
+                                ))
+                            }
+                        };
 
                         Ok(PubsubMessage::AggregateAndProofAttestation(Arc::new(
                             agg_and_proof,
                         )))
                     }
                     GossipKind::Attestation(subnet_id) => {
-                        match fork_context.from_context_bytes(gossip_topic.fork_digest) {
+                        match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
                             Some(Phase::Phase0)
                             | Some(Phase::Altair)
                             | Some(Phase::Bellatrix)
@@ -232,13 +234,12 @@ impl<P: Preset> PubsubMessage<P> {
                                     Phase0Attestation::from_ssz_default(data)
                                         .map_err(|e| format!("{:?}", e))?,
                                 );
-
                                 Ok(PubsubMessage::Attestation(
                                     *subnet_id,
                                     Arc::new(attestation),
                                 ))
                             }
-                            Some(Phase::Electra) => {
+                            Some(Phase::Electra) | Some(Phase::Fulu) => {
                                 let single_attestation = SingleAttestation::from_ssz_default(data)
                                     .map_err(|e| format!("{:?}", e))?;
 
@@ -256,43 +257,48 @@ impl<P: Preset> PubsubMessage<P> {
                         }
                     }
                     GossipKind::BeaconBlock => {
-                        let beacon_block =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                                Some(Phase::Phase0) => SignedBeaconBlock::Phase0(
-                                    Phase0SignedBeaconBlock::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Altair) => SignedBeaconBlock::Altair(
-                                    AltairSignedBeaconBlock::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Bellatrix) => SignedBeaconBlock::Bellatrix(
-                                    BellatrixBeaconBlock::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Capella) => SignedBeaconBlock::Capella(
-                                    CapellaBeaconBlock::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Deneb) => SignedBeaconBlock::Deneb(
-                                    DenebBeaconBlock::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Electra) => SignedBeaconBlock::Electra(
-                                    ElectraBeaconBlock::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                None => {
-                                    return Err(format!(
-                                        "Unknown gossipsub fork digest: {:?}",
-                                        gossip_topic.fork_digest
-                                    ))
-                                }
-                            };
+                        let beacon_block = match fork_context
+                            .get_fork_from_context_bytes(gossip_topic.fork_digest)
+                        {
+                            Some(Phase::Phase0) => SignedBeaconBlock::Phase0(
+                                Phase0SignedBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Altair) => SignedBeaconBlock::Altair(
+                                AltairSignedBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Bellatrix) => SignedBeaconBlock::Bellatrix(
+                                BellatrixBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Capella) => SignedBeaconBlock::Capella(
+                                CapellaBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Deneb) => SignedBeaconBlock::Deneb(
+                                DenebBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Electra) => SignedBeaconBlock::Electra(
+                                ElectraBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Fulu) => SignedBeaconBlock::Fulu(
+                                FuluSignedBeaconBlock::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            None => {
+                                return Err(format!(
+                                    "Unknown gossipsub fork digest: {:?}",
+                                    gossip_topic.fork_digest
+                                ))
+                            }
+                        };
                         Ok(PubsubMessage::BeaconBlock(Arc::new(beacon_block)))
                     }
                     GossipKind::BlobSidecar(blob_index) => {
-                        match fork_context.from_context_bytes(gossip_topic.fork_digest) {
+                        match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
                             Some(Phase::Deneb | Phase::Electra) => {
                                 let blob_sidecar = Arc::new(
                                     BlobSidecar::from_ssz_default(data)
@@ -304,7 +310,11 @@ impl<P: Preset> PubsubMessage<P> {
                                 ))))
                             }
                             Some(
-                                Phase::Phase0 | Phase::Altair | Phase::Bellatrix | Phase::Capella,
+                                Phase::Phase0
+                                | Phase::Altair
+                                | Phase::Bellatrix
+                                | Phase::Capella
+                                | Phase::Fulu,
                             )
                             | None => Err(format!(
                                 "beacon_blobs_and_sidecar topic invalid for given fork digest {:?}",
@@ -313,30 +323,26 @@ impl<P: Preset> PubsubMessage<P> {
                         }
                     }
                     GossipKind::DataColumnSidecar(subnet_id) => {
-                        match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                            // TODO(das): Remove Deneb fork
-                            Some(fork) if *fork >= Phase::Deneb => {
+                        match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
+                            Some(Phase::Fulu) => {
                                 let col_sidecar = Arc::new(
                                     DataColumnSidecar::from_ssz_default(data)
                                         .map_err(|e| format!("{:?}", e))?,
                                 );
-                                let sidecar_epoch =
-                                    misc::compute_epoch_at_slot::<P>(col_sidecar.slot());
-                                let peer_das_enabled =
-                                    sidecar_epoch >= fork_context.chain_config().eip7594_fork_epoch;
-                                if peer_das_enabled {
-                                    Ok(PubsubMessage::DataColumnSidecar(Box::new((
-                                        *subnet_id,
-                                        col_sidecar,
-                                    ))))
-                                } else {
-                                    Err(format!(
-                                        "data_column_sidecar topic invalid for given fork digest {:?}",
-                                        gossip_topic.fork_digest
-                                    ))
-                                }
+                                Ok(PubsubMessage::DataColumnSidecar(Box::new((
+                                    *subnet_id,
+                                    col_sidecar,
+                                ))))
                             }
-                            Some(_) | None => Err(format!(
+                            Some(
+                                Phase::Phase0
+                                | Phase::Altair
+                                | Phase::Bellatrix
+                                | Phase::Capella
+                                | Phase::Deneb
+                                | Phase::Electra,
+                            )
+                            | None => Err(format!(
                                 "data_column_sidecar topic invalid for given fork digest {:?}",
                                 gossip_topic.fork_digest
                             )),
@@ -353,39 +359,44 @@ impl<P: Preset> PubsubMessage<P> {
                         Ok(PubsubMessage::ProposerSlashing(Box::new(proposer_slashing)))
                     }
                     GossipKind::AttesterSlashing => {
-                        let attester_slashing =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                                Some(Phase::Phase0) => AttesterSlashing::Phase0(
-                                    Phase0AttesterSlashing::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Altair) => AttesterSlashing::Phase0(
-                                    Phase0AttesterSlashing::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Bellatrix) => AttesterSlashing::Phase0(
-                                    Phase0AttesterSlashing::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Capella) => AttesterSlashing::Phase0(
-                                    Phase0AttesterSlashing::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Deneb) => AttesterSlashing::Phase0(
-                                    Phase0AttesterSlashing::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(Phase::Electra) => AttesterSlashing::Electra(
-                                    ElectraAttesterSlashing::from_ssz_default(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                None => {
-                                    return Err(format!(
-                                        "Unknown gossipsub fork digest: {:?}",
-                                        gossip_topic.fork_digest
-                                    ))
-                                }
-                            };
+                        let attester_slashing = match fork_context
+                            .get_fork_from_context_bytes(gossip_topic.fork_digest)
+                        {
+                            Some(Phase::Phase0) => AttesterSlashing::Phase0(
+                                Phase0AttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Altair) => AttesterSlashing::Phase0(
+                                Phase0AttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Bellatrix) => AttesterSlashing::Phase0(
+                                Phase0AttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Capella) => AttesterSlashing::Phase0(
+                                Phase0AttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Deneb) => AttesterSlashing::Phase0(
+                                Phase0AttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Electra) => AttesterSlashing::Electra(
+                                ElectraAttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(Phase::Fulu) => AttesterSlashing::Electra(
+                                ElectraAttesterSlashing::from_ssz_default(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            None => {
+                                return Err(format!(
+                                    "Unknown gossipsub fork digest: {:?}",
+                                    gossip_topic.fork_digest
+                                ))
+                            }
+                        };
 
                         Ok(PubsubMessage::AttesterSlashing(Box::new(attester_slashing)))
                     }
@@ -414,7 +425,7 @@ impl<P: Preset> PubsubMessage<P> {
                     }
                     GossipKind::LightClientFinalityUpdate => {
                         let light_client_finality_update =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
+                            match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
                                 Some(Phase::Phase0) => {
                                     return Err(format!(
                                         "light_client_finality_update topic invalid for given fork digest {:?}",
@@ -445,6 +456,12 @@ impl<P: Preset> PubsubMessage<P> {
                                         .map_err(|e| format!("{:?}", e))?
                                         .into()
                                 }
+                                Some(Phase::Fulu) => {
+                                    SszReadDefault::from_ssz_default(data)
+                                        .map(LightClientFinalityUpdate::Fulu)
+                                        .map_err(|e| format!("{:?}", e))?
+                                        .into()
+                                }
                                 None => {
                                     return Err(format!(
                                         "light_client_finality_update topic invalid for given fork digest {:?}",
@@ -459,7 +476,7 @@ impl<P: Preset> PubsubMessage<P> {
                     }
                     GossipKind::LightClientOptimisticUpdate => {
                         let light_client_optimistic_update =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
+                            match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
                                 Some(Phase::Phase0) => {
                                     return Err(format!(
                                         "light_client_optimistic_update topic invalid for given fork digest {:?}",
@@ -484,6 +501,11 @@ impl<P: Preset> PubsubMessage<P> {
                                 Some(Phase::Electra) => {
                                     SszReadDefault::from_ssz_default(data)
                                         .map(LightClientOptimisticUpdate::Electra)
+                                        .map_err(|e| format!("{:?}", e))?
+                                }
+                                Some(Phase::Fulu) => {
+                                    SszReadDefault::from_ssz_default(data)
+                                        .map(LightClientOptimisticUpdate::Fulu)
                                         .map_err(|e| format!("{:?}", e))?
                                 }
                                 None => {

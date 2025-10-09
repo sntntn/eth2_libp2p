@@ -10,13 +10,13 @@ use crate::peer_manager::{
 use crate::peer_manager::{MIN_OUTBOUND_ONLY_FACTOR, PEER_EXCESS_FACTOR, PRIORITY_PEER_EXCESS};
 use crate::rpc::methods::MetadataRequest;
 use crate::rpc::{
-    GoodbyeReason, HandlerErr, InboundRequestId, NetworkParams, Protocol, RPCError, RPCMessage,
-    RPCReceived, RequestType, ResponseTermination, RpcResponse, RpcSuccessResponse, RPC,
+    GoodbyeReason, HandlerErr, InboundRequestId, Protocol, RPCError, RPCMessage, RPCReceived,
+    RequestType, ResponseTermination, RpcResponse, RpcSuccessResponse, RPC,
 };
 use crate::types::{
-    attestation_sync_committee_topics, fork_core_topics, subnet_from_topic_hash, EnrForkId,
-    ForkContext, GossipEncoding, GossipKind, GossipTopic, SnappyTransform, Subnet, SubnetDiscovery,
-    ALTAIR_CORE_TOPICS, BASE_CORE_TOPICS, CAPELLA_CORE_TOPICS, LIGHT_CLIENT_GOSSIP_TOPICS,
+    all_topics_at_fork, core_topics_to_subscribe, is_fork_non_core_topic, subnet_from_topic_hash,
+    EnrForkId, ForkContext, GossipEncoding, GossipKind, GossipTopic, SnappyTransform, Subnet,
+    SubnetDiscovery,
 };
 use crate::EnrExt;
 use crate::{metrics, Enr, NetworkGlobals, PubsubMessage, TopicHash};
@@ -41,6 +41,7 @@ use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+
 use std::time::Duration;
 use std::usize;
 use std_ext::ArcExt as _;
@@ -52,7 +53,7 @@ use types::{
     config::Config as ChainConfig,
     nonstandard::Phase,
     phase0::{
-        consts::{AttestationSubnetCount, FAR_FUTURE_EPOCH},
+        consts::AttestationSubnetCount,
         primitives::{ForkDigest, Slot},
     },
     preset::Preset,
@@ -114,6 +115,8 @@ pub enum NetworkEvent<P: Preset> {
     StatusPeer(PeerId),
     NewListenAddr(Multiaddr),
     ZeroListeners,
+    /// A peer has an updated custody group count from MetaData.
+    PeerUpdatedCustodyGroupCount(PeerId),
 }
 
 pub type Gossipsub = gossipsub::Behaviour<SnappyTransform, SubscriptionFilter>;
@@ -140,7 +143,7 @@ where
     /// The Eth2 RPC specified in the wire-0 protocol.
     pub eth2_rpc: RPC<AppRequestId, P>,
     /// Discv5 Discovery protocol.
-    pub discovery: Discovery,
+    pub discovery: Discovery<P>,
     /// Keep regular connection to peers and disconnect if absent.
     // NOTE: The id protocol is used for initial interop. This will be removed by mainnet.
     /// Provides IP addresses and peer information.
@@ -187,6 +190,7 @@ impl<P: Preset> Network<P> {
         chain_config: Arc<ChainConfig>,
         executor: task_executor::TaskExecutor,
         mut ctx: ServiceContext<'_>,
+        custody_group_count: u64,
     ) -> Result<(Self, Arc<NetworkGlobals>)> {
         let config = ctx.config.clone();
         trace_with_peers!("Libp2p Service starting");
@@ -203,27 +207,28 @@ impl<P: Preset> Network<P> {
 
         // set up a collection of variables accessible outside of the network crate
         // Create an ENR or load from disk if appropriate
+        let next_fork_digest = ctx
+            .fork_context
+            .next_fork_digest()
+            .unwrap_or_else(|| ctx.fork_context.current_fork_digest());
+
+        let custody_group_count_opt = chain_config
+            .is_peerdas_scheduled()
+            .then_some(custody_group_count);
         let enr = crate::discovery::enr::build_or_load_enr::<P>(
             &chain_config,
             local_keypair.clone(),
             &config,
             &ctx.enr_fork_id,
+            custody_group_count_opt,
+            next_fork_digest,
         )?;
-
-        // construct the metadata
-        let custody_subnet_count = chain_config.is_eip7594_fork_epoch_set().then(|| {
-            if config.subscribe_all_data_column_subnets {
-                chain_config.data_column_sidecar_subnet_count
-            } else {
-                chain_config.custody_requirement
-            }
-        });
 
         // Construct the metadata
         let meta_data =
-            utils::load_or_build_metadata(config.network_dir.as_deref(), custody_subnet_count);
+            utils::load_or_build_metadata(config.network_dir.as_deref(), custody_group_count_opt);
         let seq_number = meta_data.seq_number();
-        let globals = NetworkGlobals::new(
+        let globals = NetworkGlobals::new::<P>(
             chain_config.clone_arc(),
             enr,
             meta_data,
@@ -249,7 +254,7 @@ impl<P: Preset> Network<P> {
             config.network_load,
             ctx.fork_context.clone(),
             gossipsub_config_params,
-            chain_config.seconds_per_slot.get(),
+            chain_config.slot_duration_ms.as_secs(),
             chain_config
                 .preset_base
                 .phase0_preset()
@@ -261,9 +266,9 @@ impl<P: Preset> Network<P> {
         let score_settings = PeerScoreSettings::new(&chain_config, gs_config.mesh_n());
 
         let gossip_cache = {
-            let slot_duration = std::time::Duration::from_secs(chain_config.seconds_per_slot.get());
+            let slot_duration = chain_config.slot_duration_ms;
             let half_epoch = std::time::Duration::from_secs(
-                chain_config.seconds_per_slot.get() * P::SlotsPerEpoch::U64 / 2,
+                chain_config.slot_duration_ms.as_secs() * P::SlotsPerEpoch::U64 / 2,
             );
 
             GossipCache::builder()
@@ -301,23 +306,46 @@ impl<P: Preset> Network<P> {
 
             // Set up a scoring update interval
             let update_gossipsub_scores = tokio::time::interval(params.decay_interval);
+
+            let current_fork_epoch = ctx.fork_context.current_fork_epoch();
+            let current_and_future_forks = ctx
+                .fork_context
+                .all_fork_epochs()
+                .into_iter()
+                .filter_map(|fork_epoch| {
+                    if fork_epoch >= current_fork_epoch {
+                        Some((fork_epoch, ctx.fork_context.context_bytes(fork_epoch)))
+                    } else {
+                        None
+                    }
+                });
+
+            let all_topics_for_forks = current_and_future_forks
+                .map(|(fork_epoch, fork_digest)| {
+                    let phase = ctx.chain_config.phase_at_epoch(fork_epoch);
+                    all_topics_at_fork(&chain_config, phase)
+                        .into_iter()
+                        .map(|topic| {
+                            Topic::new(GossipTopic::new(
+                                topic,
+                                GossipEncoding::default(),
+                                fork_digest,
+                            ))
+                            .into()
+                        })
+                        .collect::<Vec<TopicHash>>()
+                })
+                .collect::<Vec<_>>();
+
+            // For simplicity find the fork with the most individual topics and assume all forks
+            // have the same topic count
+            let max_topics_at_any_fork = all_topics_for_forks
+                .iter()
+                .map(|topics| topics.len())
+                .max()
+                .expect("each fork has at least 5 hardcoded core topics");
+
             let possible_fork_digests = ctx.fork_context.all_fork_digests();
-
-            let blob_sidecar_subnet_count_max =
-                if chain_config.electra_fork_epoch != FAR_FUTURE_EPOCH {
-                    chain_config.blob_sidecar_subnet_count_electra.get()
-                } else {
-                    chain_config.blob_sidecar_subnet_count.get()
-                };
-
-            let max_topics = AttestationSubnetCount::USIZE
-                + SyncCommitteeSubnetCount::USIZE
-                + blob_sidecar_subnet_count_max as usize
-                + chain_config.data_column_sidecar_subnet_count as usize
-                + BASE_CORE_TOPICS.len()
-                + ALTAIR_CORE_TOPICS.len()
-                + CAPELLA_CORE_TOPICS.len() // 0 core deneb and electra topics
-                + LIGHT_CLIENT_GOSSIP_TOPICS.len();
 
             let filter = gossipsub::MaxCountSubscriptionFilter {
                 filter: utils::create_whitelist_filter(
@@ -327,9 +355,9 @@ impl<P: Preset> Network<P> {
                     SyncCommitteeSubnetCount::U64,
                 ),
                 // during a fork we subscribe to both the old and new topics
-                max_subscribed_topics: max_topics * 4,
+                max_subscribed_topics: max_topics_at_any_fork * 4,
                 // 424 in theory = (64 attestation + 4 sync committee + 7 core topics + 9 blob topics + 128 column topics) * 2
-                max_subscriptions_per_request: max_topics * 2,
+                max_subscriptions_per_request: max_topics_at_any_fork * 2,
             };
 
             // If metrics are enabled for libp2p build the configuration
@@ -366,40 +394,26 @@ impl<P: Preset> Network<P> {
             // If we are using metrics, then register which topics we want to make sure to keep
             // track of
             if ctx.libp2p_registry.is_some() {
-                let topics_to_keep_metrics_for = attestation_sync_committee_topics()
-                    .map(|gossip_kind| {
-                        Topic::from(GossipTopic::new(
-                            gossip_kind,
-                            GossipEncoding::default(),
-                            enr_fork_id.fork_digest,
-                        ))
-                        .into()
-                    })
-                    .collect::<Vec<TopicHash>>();
-                gossipsub.register_topics_for_metrics(topics_to_keep_metrics_for);
+                for topics in all_topics_for_forks {
+                    gossipsub.register_topics_for_metrics(topics);
+                }
             }
 
             (gossipsub, update_gossipsub_scores)
         };
 
-        let network_params = NetworkParams {
-            max_payload_size: chain_config.max_payload_size,
-            ttfb_timeout: Duration::from_secs(chain_config.ttfb_timeout),
-            resp_timeout: Duration::from_secs(chain_config.resp_timeout),
-        };
         let eth2_rpc = RPC::new(
             chain_config.clone_arc(),
             ctx.fork_context.clone(),
             config.enable_light_client_server,
             config.inbound_rate_limiter_config.clone(),
             config.outbound_rate_limiter_config.clone(),
-            network_params,
             seq_number,
         );
 
         let discovery = {
             // Build and start the discovery sub-behaviour
-            let mut discovery = Discovery::new(
+            let mut discovery = Discovery::<P>::new(
                 chain_config,
                 local_keypair.clone(),
                 &config,
@@ -437,7 +451,7 @@ impl<P: Preset> Network<P> {
                 target_peer_count: config.target_peers,
                 ..Default::default()
             };
-            PeerManager::new(peer_manager_cfg, network_globals.clone())?
+            PeerManager::new::<P>(peer_manager_cfg, network_globals.clone())?
         };
 
         let connection_limits = {
@@ -704,7 +718,7 @@ impl<P: Preset> Network<P> {
         name = "libp2p",
         skip_all
     )]
-    pub fn discovery_mut(&mut self) -> &mut Discovery {
+    pub fn discovery_mut(&mut self) -> &mut Discovery<P> {
         &mut self.swarm.behaviour_mut().discovery
     }
     /// Provides IP addresses and peer information.
@@ -755,7 +769,7 @@ impl<P: Preset> Network<P> {
         name = "libp2p",
         skip_all
     )]
-    pub fn discovery(&self) -> &Discovery {
+    pub fn discovery(&self) -> &Discovery<P> {
         &self.swarm.behaviour().discovery
     }
     /// Provides IP addresses and peer information.
@@ -845,32 +859,26 @@ impl<P: Preset> Network<P> {
         skip_all
     )]
     pub fn subscribe_new_fork_topics(&mut self, phase: Phase, new_fork_digest: ForkDigest) {
-        // Subscribe to existing topics with new fork digest
+        // Re-subscribe to non-core topics with the new fork digest
         let subscriptions = self.network_globals.gossipsub_subscriptions.read().clone();
         for mut topic in subscriptions.into_iter() {
-            topic.fork_digest = new_fork_digest;
-            self.subscribe(topic);
+            if is_fork_non_core_topic(&topic, phase) {
+                topic.fork_digest = new_fork_digest;
+                self.subscribe(topic);
+            }
         }
 
         // Subscribe to core topics for the new fork
-        for kind in fork_core_topics(&self.network_globals.config, &phase) {
+        for kind in core_topics_to_subscribe(
+            &self.network_globals.config,
+            phase,
+            &self.network_globals.as_topic_config(),
+        ) {
             let topic = GossipTopic::new(kind, GossipEncoding::default(), new_fork_digest);
             self.subscribe(topic);
         }
 
-        // Register the new topics for metrics
-        let topics_to_keep_metrics_for = attestation_sync_committee_topics()
-            .map(|gossip_kind| {
-                Topic::from(GossipTopic::new(
-                    gossip_kind,
-                    GossipEncoding::default(),
-                    new_fork_digest,
-                ))
-                .into()
-            })
-            .collect::<Vec<TopicHash>>();
-        self.gossipsub_mut()
-            .register_topics_for_metrics(topics_to_keep_metrics_for);
+        // Already registered all possible gossipsub topics for metrics
     }
 
     /// Unsubscribe from all topics that doesn't have the given fork_digest
@@ -918,6 +926,28 @@ impl<P: Preset> Network<P> {
                     warn_with_peers!(%topic, error = e, "Failed to remove topic weight")
                 }
             }
+        }
+    }
+
+    /// Subscribe to all data columns determined by the cgc.
+    pub fn subscribe_new_data_column_subnets(&mut self, sampling_column_count: u64) {
+        self.network_globals
+            .update_data_column_subnets::<P>(sampling_column_count);
+
+        for column in self.network_globals.sampling_subnets() {
+            let kind = GossipKind::DataColumnSidecar(column);
+            self.subscribe_kind(kind);
+        }
+    }
+
+    /// Subscribe to all data columns determined by the cgc.
+    pub fn subscribe_new_data_column_subnets(&mut self, sampling_column_count: u64) {
+        self.network_globals
+            .update_data_column_subnets::<P>(sampling_column_count);
+
+        for column in self.network_globals.sampling_subnets() {
+            let kind = GossipKind::DataColumnSidecar(column);
+            self.subscribe_kind(kind);
         }
     }
 
@@ -1298,6 +1328,15 @@ impl<P: Preset> Network<P> {
         self.update_metadata_bitfields();
     }
 
+    /// Updates the cgc value in the ENR.
+    pub fn update_enr_cgc(&mut self, new_custody_group_count: u64) {
+        if let Err(e) = self.discovery_mut().update_enr_cgc(new_custody_group_count) {
+            crit!(self.log, "Could not update cgc in ENR"; "error" => ?e);
+        }
+        // update the local meta data which informs our peers of the update during PINGS
+        self.update_metadata_cgc(new_custody_group_count);
+    }
+
     /// Attempts to discover new peers for a given subnet. The `min_ttl` gives the time at which we
     /// would like to retain the peers for.
     #[instrument(parent = None,
@@ -1373,6 +1412,13 @@ impl<P: Preset> Network<P> {
         self.enr_fork_id = enr_fork_id;
     }
 
+    /// Updates the local ENR's "nfd" field to `next_fork_digest`.
+    pub fn update_nfd(&mut self, next_fork_digest: ForkDigest) {
+        if let Err(e) = self.discovery_mut().update_enr_nfd(next_fork_digest) {
+            crit!(self.log, "Could not update ENR next fork digest"; "error" => ?e);
+        }
+    }
+
     /* Private internal functions */
 
     /// Updates the current meta data of the node to match the local ENR.
@@ -1412,6 +1458,42 @@ impl<P: Preset> Network<P> {
         utils::save_metadata_to_disk(self.network_dir.as_deref(), meta_data);
     }
 
+    /// Update the current custody group count in meta data of the node to match the local ENR.
+    fn update_metadata_cgc(&mut self, scheduled_custody_group_count: u64) {
+        // write lock scope
+        let mut meta_data_w = self.network_globals.local_metadata.write();
+
+        *meta_data_w.seq_number_mut() += 1;
+        if let Some(custody_group_count) = meta_data_w.custody_group_count_mut() {
+            *custody_group_count = scheduled_custody_group_count;
+        }
+        let seq_number = meta_data_w.seq_number();
+        let meta_data = meta_data_w.clone();
+
+        drop(meta_data_w);
+        self.eth2_rpc_mut().update_seq_number(seq_number);
+        // Save the updated metadata to disk
+        utils::save_metadata_to_disk(self.network_dir.as_deref(), meta_data);
+    }
+
+    /// Update the current custody group count in meta data of the node to match the local ENR.
+    fn update_metadata_cgc(&mut self, scheduled_custody_group_count: u64) {
+        // write lock scope
+        let mut meta_data_w = self.network_globals.local_metadata.write();
+
+        *meta_data_w.seq_number_mut() += 1;
+        if let Some(custody_group_count) = meta_data_w.custody_group_count_mut() {
+            *custody_group_count = scheduled_custody_group_count;
+        }
+        let seq_number = meta_data_w.seq_number();
+        let meta_data = meta_data_w.clone();
+
+        drop(meta_data_w);
+        self.eth2_rpc_mut().update_seq_number(seq_number);
+        // Save the updated metadata to disk
+        utils::save_metadata_to_disk(self.network_dir.as_deref(), meta_data);
+    }
+
     /// Sends a Ping request to the peer.
     #[instrument(parent = None,
         level = "trace",
@@ -1431,7 +1513,7 @@ impl<P: Preset> Network<P> {
         skip_all
     )]
     fn send_meta_data_request(&mut self, peer_id: PeerId) {
-        let event = if self.network_globals.config.is_eip7594_fork_epoch_set() {
+        let event = if self.network_globals.config.is_peerdas_scheduled() {
             // Nodes with higher custody will probably start advertising it
             // before peerdas is activated
             RequestType::MetaData(MetadataRequest::new_v3())
@@ -1477,7 +1559,7 @@ impl<P: Preset> Network<P> {
         skip_all
     )]
     fn dial_cached_enrs_in_subnet(&mut self, chain_config: Arc<ChainConfig>, subnet: Subnet) {
-        let predicate = subnet_predicate(chain_config, vec![subnet]);
+        let predicate = subnet_predicate::<P>(chain_config, vec![subnet]);
         let peers_to_dial: Vec<Enr> = self
             .discovery()
             .cached_enrs()
@@ -1704,6 +1786,7 @@ impl<P: Preset> Network<P> {
         }
 
         // The METADATA and PING RPC responses are handled within the behaviour and not propagated
+        // The PING RPC responses are handled within the behaviour and not propagated
         match event.message {
             Err(handler_err) => {
                 match handler_err {
@@ -1910,9 +1993,11 @@ impl<P: Preset> Network<P> {
                         None
                     }
                     RpcSuccessResponse::MetaData(meta_data) => {
-                        self.peer_manager_mut()
-                            .meta_data_response(&peer_id, meta_data.as_ref().clone());
-                        None
+                        let updated_cgc = self
+                            .peer_manager_mut()
+                            .meta_data_response(&peer_id, *meta_data);
+                        // Send event after calling into peer_manager so the PeerDB is updated.
+                        updated_cgc.then(|| NetworkEvent::PeerUpdatedCustodyGroupCount(peer_id))
                     }
                     /* Network propagated protocols */
                     RpcSuccessResponse::Status(msg) => {
