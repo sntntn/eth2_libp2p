@@ -279,32 +279,14 @@ impl NetworkGlobals {
 }
 
 
-//TO DO - tracing subscriber
 #[cfg(test)]
 mod test {
-    use slog::{o, Drain as _, Level};
     use types::preset::Mainnet;
 
     use super::*;
 
-    pub fn build_log(level: slog::Level, enabled: bool) -> slog::Logger {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
-
-        if enabled {
-            slog::Logger::root(drain.filter_level(level).fuse(), o!())
-        } else {
-            slog::Logger::root(drain.filter(|_| false).fuse(), o!())
-        }
-    }
-
     #[test]
     fn test_sampling_subnets() {
-        let log_level = Level::Debug;
-        let enable_logging = false;
-
-        let log = build_log(log_level, enable_logging);
         let mut chain_config = ChainConfig::mainnet();
         chain_config.fulu_fork_epoch = 0;
 

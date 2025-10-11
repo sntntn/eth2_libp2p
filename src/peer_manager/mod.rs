@@ -1556,7 +1556,6 @@ mod tests {
             target_peers: target_peer_count,
             ..Default::default()
         });
-        let log = build_log(slog::Level::Debug, false);
         let globals = NetworkGlobals::new_test_globals::<Mainnet>(
             chain_config,
             trusted_peers,

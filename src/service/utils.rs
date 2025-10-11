@@ -240,7 +240,7 @@ pub fn load_or_build_metadata(
                             {
                                 *meta_data.seq_number_mut() += 1;
                             }
-                            debug!(log, "Loaded metadata from disk");
+                            debug_with_peers!("Loaded metadata from disk");
                         }
                         Err(_) => match MetaDataV1::from_ssz_default(&metadata_ssz) {
                             Ok(persisted_metadata) => {
