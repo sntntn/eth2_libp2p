@@ -1,7 +1,7 @@
 use ssz::Ssz;
 use types::phase0::primitives::{Epoch, ForkDigest, Version};
 
-#[derive(Clone, Copy, Default, Ssz)]
+#[derive(Debug, Clone, Copy, Default, Ssz)]
 pub struct EnrForkId {
     pub fork_digest: ForkDigest,
     pub next_fork_version: Version,
